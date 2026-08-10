@@ -1,0 +1,30 @@
+schema_version: 1
+
+project:
+  name: ios-webapp-harness-mvp
+
+documents:
+  original_vision:
+    - README.md
+  current_authority:
+    - docs/00-authority.md
+  current_planning:
+    - .planning/task_plan.md
+  human_view:
+    - docs/项目负责人/项目总览.md
+    - docs/项目负责人/两天实施计划.md
+
+priority:
+  - user-approved-decisions
+  - current-authority
+  - current-planning
+  - human-view
+
+approvals:
+  authority_change: user
+  feature_selection: user
+  final_acceptance: user
+
+review:
+  codex: user-triggered
+  stage_value_review: end-of-mvp-only

@@ -1,0 +1,14 @@
+source:
+  path: ./xcode/eCommerce-main
+  project: eCommerce.xcodeproj
+  scheme: eCommerce
+  simulator: iPhone 16 Pro
+
+web:
+  path: ./webapp
+  framework: react
+  test: playwright
+
+limits:
+  build_fix_rounds: 2
+  review_fix_rounds: 2
