@@ -4,7 +4,7 @@
 | --- | --- |
 | Repository | `iOS-WebApp-Harness-MVP` |
 | Branch | `main` |
-| Commit | 待当前会话提交 |
+| Commit | `a949d02` |
 | Current phase | Phase 5 完成 / 等待最终验收 |
 | Authority | `2026-08-10.1-draft` |
 | Current goal | 完成一个最小、真实、可自动验证的 iOS→Web 功能闭环 |
