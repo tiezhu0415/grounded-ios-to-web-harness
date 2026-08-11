@@ -17,7 +17,7 @@
 
 | 产物 | 路径 | 说明 |
 | --- | --- | --- |
-| 源项目本地身份 | `xcode/eCommerce-main/.git` | commit `8792b0d`，未推送，未包含 GoogleService-Info.plist / xcuserdata |
+| 源项目本地身份 | `xcode/eCommerce-main/.git` | commit `4863146`（在 `8792b0d` 基础上增加 DEBUG 预填凭证），未推送，未包含 GoogleService-Info.plist / xcuserdata |
 | iOS 构建与启动证据 | `.runs/2026-08-10/source.json` | 构建命令、模拟器、启动截图、日志 |
 | 源项目蓝图 | `docs/项目负责人/源项目蓝图.md` | 模块、功能、选中范围、UNVERIFIED 项 |
 | Web 迁移计划 | `docs/项目负责人/Web迁移计划.md` | 9 项任务，全部完成 |
