@@ -7,8 +7,8 @@ export const PAGE_SIZE = 10;
 export interface ProductFilter {
   category?: string | null;
   subCategory?: string | null;
-  searchQuery?: string;
   simulateError?: boolean;
+  simulateEmpty?: boolean;
 }
 
 export interface PaginatedProducts {
@@ -61,6 +61,10 @@ export async function fetchProducts(
     throw new Error('Simulated data loading failure');
   }
 
+  if (filter.simulateEmpty) {
+    return { products: [], total: 0, hasMore: false };
+  }
+
   let filtered = allProducts;
 
   if (filter.category && filter.category !== 'all') {
@@ -69,16 +73,6 @@ export async function fetchProducts(
 
   if (filter.subCategory) {
     filtered = filtered.filter((p) => p.subCategory === filter.subCategory);
-  }
-
-  if (filter.searchQuery?.trim()) {
-    const q = filter.searchQuery.trim().toLowerCase();
-    filtered = filtered.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.brand.toLowerCase().includes(q) ||
-        p.subCategory.toLowerCase().includes(q)
-    );
   }
 
   const total = filtered.length;

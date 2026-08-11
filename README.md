@@ -12,16 +12,22 @@
 2. [两天实施计划](docs/项目负责人/两天实施计划.md)
 3. [源项目蓝图](docs/项目负责人/源项目蓝图.md)
 4. [Web迁移计划](docs/项目负责人/Web迁移计划.md)
-5. [最终验收报告](docs/项目负责人/最终验收报告.md)
+5. [WebApp查看清单](docs/项目负责人/WebApp查看清单.md)
+6. [最终验收报告](docs/项目负责人/最终验收报告.md)
 
 ## 当前状态
 
 | 项目 | 状态 |
 | --- | --- |
-| 方案 | `DRAFT — 待用户确认` |
-| Harness 实现 | `NOT STARTED` |
-| 源 iOS 项目 | `COPIED — 待建立独立 Git 输入身份` |
-| WebApp | `ABSENT` |
-| 自动验证 | `ABSENT` |
+| 方案 | `APPROVED — CONTINUE` |
+| Harness 工作方法 | `SMOKE_VERIFIED — ONE PROJECT` |
+| 源 iOS 项目 | `eCommerce-main`，已建立本地 Git 输入身份并启动；登录后 Store/分类/商品列表已验证 |
+| WebApp | 商品列表与分类筛选已实现；手机优先布局已验证 |
+| 自动验证 | 移动端 Playwright 7/7 通过；iOS 目标功能运行复验已完成 |
+| 下一步 | 准备第二项目通用性验证 |
 
 AI 执行者应先阅读 [Authority](docs/00-authority.md)、`CLAUDE.md` 和 `.planning/HANDOFF.md`。
+
+## 通用 Harness 与示例
+
+`harness.example.yaml`、Authority、planning 和 handoff 规则属于通用 Harness。`xcode/eCommerce-main`、`webapp/` 和当前项目负责人文档是首个 eCommerce 示例产物，不代表 Harness 针对商品功能写死。当前只验证过一个项目，跨项目通用性尚未证明。

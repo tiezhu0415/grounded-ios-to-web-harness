@@ -1,8 +1,10 @@
 # 项目 Authority
 
-> 版本：`2026-08-10.1-draft`
+> 版本：`2026-08-11.1`
 >
-> 状态：`DRAFT — WAITING FOR USER APPROVAL`
+> 状态：`APPROVED`
+>
+> 用户批准：2026-08-11，同意 Codex 审查结论并授权限定修正与重新验证。
 
 ## 1. 唯一目标
 
@@ -55,4 +57,12 @@
 
 ## 7. 批准后的第一步
 
-用户批准本文后，Claude 按 `.planning/task_plan.md` 开始 Phase 1。批准前不得创建 WebApp 或宣称 Harness 已实现。
+当前 eCommerce MVP 实现已完成，Codex 首轮审查结论为 `ADJUST`。修正已进入 `FIXED — AWAITING REVALIDATION`，最终验收仍由用户决定。
+
+## 8. 通用性边界
+
+- Harness 的通用部分是五阶段工作方法、配置入口、planning/handoff 规则和证据要求；
+- `xcode/eCommerce-main`、`webapp/` 及当前中文蓝图/验收报告是首个验证示例，不是 Harness 固定业务能力；
+- 新项目必须通过自己的 `harness.yaml` 提供路径、project、scheme、模拟器和 Web 输出目录；
+- `harness.example.yaml` 不得包含 eCommerce、商品或本机路径；
+- 当前通用性只达到 `SMOKE_VERIFIED — ONE PROJECT`，尚未通过第二项目，不能宣称已经证明跨项目通用。

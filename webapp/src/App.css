@@ -15,51 +15,50 @@
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: #e9e9e4;
   color: var(--text);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .app {
-  max-width: 1200px;
+  width: 100%;
+  max-width: 430px;
+  min-height: 100svh;
   margin: 0 auto;
-  padding: 24px;
+  padding: 20px 16px 32px;
+  background: var(--bg);
 }
 
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 24px;
-  flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 20px;
 }
 
 .app-header h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
 }
 
-.search-input {
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 15px;
-  min-width: 240px;
-  background: var(--surface);
-}
-
 .category-filter {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .category-buttons,
 .subcategory-buttons {
   display: flex;
-  flex-wrap: wrap;
+  overflow-x: auto;
   gap: 8px;
   margin-bottom: 12px;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+
+.category-buttons::-webkit-scrollbar,
+.subcategory-buttons::-webkit-scrollbar {
+  display: none;
 }
 
 .category-buttons button,
@@ -72,6 +71,8 @@ body {
   cursor: pointer;
   font-size: 14px;
   transition: all 0.2s;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .category-buttons button.active,
@@ -95,8 +96,8 @@ body {
 
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .product-card {
@@ -148,7 +149,7 @@ body {
 }
 
 .product-card-info {
-  padding: 16px;
+  padding: 12px;
 }
 
 .product-card-info h3 {
@@ -240,13 +241,10 @@ body {
   .app {
     padding: 16px;
   }
+}
 
-  .app-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .search-input {
-    width: 100%;
+@media (min-width: 431px) {
+  .app {
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.12);
   }
 }

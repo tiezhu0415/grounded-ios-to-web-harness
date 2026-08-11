@@ -39,14 +39,16 @@ test('subcategory filter narrows results', async ({ page }) => {
 
   const cards = page.getByTestId('product-card');
   await expect(cards.first()).toBeVisible();
-  await expect(cards.nth(0).getByTestId('product-subcategory')).toHaveText('Dresses');
+  const count = await cards.count();
+  expect(count).toBeGreaterThan(0);
+  for (let i = 0; i < count; i++) {
+    await expect(cards.nth(i).getByTestId('product-subcategory')).toHaveText('Dresses');
+  }
   await page.screenshot({ path: `${EVIDENCE_DIR}/web-subcategory-state.png` });
 });
 
 test('empty state is shown when no products match', async ({ page }) => {
-  await page.goto('/');
-  await waitForProducts(page);
-  await page.getByRole('searchbox').fill('xyznonexistent');
+  await page.goto('/?empty=1');
   await expect(page.getByTestId('empty-state')).toBeVisible();
   await page.screenshot({ path: `${EVIDENCE_DIR}/web-empty-state.png` });
 });
@@ -66,4 +68,12 @@ test('loads more products on scroll', async ({ page }) => {
     const count = await page.getByTestId('product-card').count();
     expect(count).toBeGreaterThan(firstCount);
   }).toPass();
+});
+
+test('shows discount and NEW IN labels', async ({ page }) => {
+  await page.goto('/');
+  await waitForProducts(page);
+  await page.getByRole('button', { name: 'Shoes' }).click();
+  await expect(page.locator('.discount-tag').first()).toBeVisible();
+  await expect(page.locator('.new-in-tag').first()).toBeVisible();
 });

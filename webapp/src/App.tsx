@@ -23,15 +23,22 @@ function App() {
   const [data, setData] = useState<PaginatedProducts | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const errorParam = useQueryParam('error');
+  const emptyParam = useQueryParam('empty');
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchProducts({ ...filter, simulateError: errorParam === '1' }, page);
+      const result = await fetchProducts(
+        {
+          ...filter,
+          simulateError: errorParam === '1',
+          simulateEmpty: emptyParam === '1',
+        },
+        page
+      );
       setData(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load products');
@@ -39,7 +46,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [filter, page, errorParam]);
+  }, [filter, page, errorParam, emptyParam]);
 
   useEffect(() => {
     load();
@@ -57,12 +64,6 @@ function App() {
     setPage(1);
   }, []);
 
-  const handleSearch = useCallback((value: string) => {
-    setSearchQuery(value);
-    setFilter((f) => ({ ...f, searchQuery: value }));
-    setPage(1);
-  }, []);
-
   const handleLoadMore = useCallback(() => {
     setPage((p) => p + 1);
   }, []);
@@ -71,14 +72,6 @@ function App() {
     <div className="app">
       <header className="app-header">
         <h1>Store</h1>
-        <input
-          type="search"
-          placeholder="Search products..."
-          aria-label="Search products"
-          value={searchQuery}
-          onChange={(e) => handleSearch(e.target.value)}
-          className="search-input"
-        />
       </header>
 
       <CategoryFilter

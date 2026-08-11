@@ -1,11 +1,11 @@
 source:
-  path: ./xcode/eCommerce-main
-  project: eCommerce.xcodeproj
-  scheme: eCommerce
-  simulator: iPhone 16 Pro
+  path: CHANGE_ME
+  project: CHANGE_ME.xcodeproj
+  scheme: CHANGE_ME
+  simulator: CHANGE_ME
 
 web:
-  path: ./webapp
+  path: CHANGE_ME
   framework: react
   test: playwright
 

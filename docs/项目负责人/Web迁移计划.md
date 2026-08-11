@@ -1,9 +1,9 @@
 # Web迁移计划
 
-> 当前状态：`DONE`
+> 当前状态：`WEB REVALIDATED / IOS RUNTIME REVALIDATION PENDING`
 > 关联蓝图：`docs/项目负责人/源项目蓝图.md`
 > 完成时间：2026-08-10
-> 测试结果：Playwright 6/6 通过，报告见 `webapp/playwright-report/index.html`，截图见 `.runs/2026-08-10/web-*.png`
+> 测试结果：移动端 Playwright 7/7 通过；`npm run lint` 和 `npm run build` 通过
 
 ## 迁移目标
 
@@ -32,14 +32,14 @@
 | W05 | 实现 `src/components/CategoryFilter.tsx`：展示 `All / Clothing / Shoes / Accessories` 及子分类选项 | 点击后更新筛选条件 | `DONE` |
 | W06 | 实现 `src/App.tsx` 商品列表页：组合筛选器与产品卡片列表，支持滚动加载更多 | 正常状态可滚动加载；空状态显示无结果 | `DONE` |
 | W07 | 添加空状态和错误状态 UI（无匹配商品、数据加载失败） | Playwright 截图证明两种状态 | `DONE` |
-| W08 | 配置 Playwright 并编写 E2E 测试：页面启动、正常列表、分类筛选、空状态、错误状态 | `npx playwright test` 全部通过 | `DONE` |
+| W08 | 配置移动端 Playwright 并编写 E2E 测试：页面启动、正常列表、分类筛选、标签、空状态、错误状态 | `npx playwright test` 全部通过 | `DONE — 7/7` |
 | W09 | 运行 Playwright，保存测试报告、截图和 trace 到 `webapp/test-results/` 和 `.runs/2026-08-10/` | 报告文件存在且核心路径通过 | `DONE` |
 
 ## 排除项
 
 | 功能 | 排除理由 |
 | --- | --- |
-| 搜索 | 源 App 中 `StoreView.searchable` 的 `searchText` 未实际使用，行为未确认 |
+| 搜索 | 源 App 中 `StoreView.searchable` 的 `searchText` 未实际使用；Web 搜索 UI 和过滤逻辑已移除 |
 | 商品详情页 | 超出本轮最小范围；可后续扩展 |
 | 收藏 / 购物车 / 支付 | 依赖 Firebase Auth 和用户状态 |
 | 登录 / 注册 | 需要 Firebase Auth 和完整用户流程 |
