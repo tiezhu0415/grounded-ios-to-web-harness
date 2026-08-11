@@ -24,7 +24,7 @@
 | React WebApp | `webapp/` | 商品列表 + 分类筛选；144 条本地数据；不依赖 Firebase |
 | Playwright 测试结果 | `webapp/playwright-report/index.html` | 7/7 通过；含 trace |
 | iOS 登录后目标功能验证记录 | `.runs/2026-08-11/ios-verification.json` | 登录方式、验证截图、观察结果 |
-| Web 重新验证记录 | `.runs/2026-08-11/web-verification.json` | 7/7 Playwright 通过、截图路径 |
+| 第二项目通用性验证计划 | `docs/项目负责人/第二项目通用性验证计划.md` | 目标、前置条件、执行步骤、成功标准、输入模板 |
 
 ## 已验证事实
 
