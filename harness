@@ -1,0 +1,421 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./harness capture --project <project-id> --feature <feature-id> [--run-id <run-id>] [--dry-run]
+  ./harness webshot --project <project-id> --run-id <run-id> --state <state> --url <local-url> --width <px> --height <px> [--scale <n>] [--wait-for <selector>]
+  ./harness compare --project <project-id> --run-id <run-id> --state <state> --ios <ios.png> --web <web.png> [--ios-crop x,y,w,h] [--web-crop x,y,w,h] [--threshold 1-255]
+  ./harness check   --project <project-id> --run-id <run-id> [--mode mapping|ios|complete]
+  ./harness help
+
+Examples:
+  ./harness capture --project ecommerce-main --feature product-detail
+  ./harness webshot --project ecommerce-main --run-id 20260812-170000-product-detail --state detail --url http://localhost:5173/products/10000 --width 402 --height 874 --scale 3
+  ./harness compare --project ecommerce-main --run-id 20260812-170000-product-detail --state detail --ios ios-detail.png --web web-detail.png
+  ./harness check --project ecommerce-main --run-id 20260812-170000-product-detail --mode mapping
+  ./harness check --project ecommerce-main --run-id 20260812-170000-product-detail --mode ios
+EOF
+}
+
+fail() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+require_slug() {
+  local label="$1"
+  local value="$2"
+  [[ "$value" =~ ^[a-z0-9][a-z0-9-]*$ ]] || fail "$label must use lowercase letters, numbers, and hyphens: $value"
+}
+
+require_positive_integer() {
+  local label="$1"
+  local value="$2"
+  [[ "$value" =~ ^[1-9][0-9]*$ ]] || fail "$label must be a positive integer: $value"
+}
+
+resolve_run_file() {
+  local run_dir="$1"
+  local filename="$2"
+  [[ "$filename" == "$(basename -- "$filename")" ]] || fail "evidence filename must not contain a path: $filename"
+  [[ "$filename" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.png$ ]] || fail "evidence must be a PNG filename: $filename"
+  [[ -f "$run_dir/$filename" ]] || fail "evidence file not found in run: $filename"
+  printf '%s\n' "$run_dir/$filename"
+}
+
+find_source_dir() {
+  local project="$1"
+  local candidate name normalized
+
+  [[ -d "$ROOT/xcode" ]] || return 1
+  for candidate in "$ROOT"/xcode/*; do
+    [[ -d "$candidate" ]] || continue
+    name="$(basename -- "$candidate")"
+    normalized="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$normalized" == "$project" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+capture() {
+  local project="" feature="" run_id="" dry_run="false"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project) [[ $# -ge 2 ]] || fail "--project needs a value"; project="$2"; shift 2 ;;
+      --feature) [[ $# -ge 2 ]] || fail "--feature needs a value"; feature="$2"; shift 2 ;;
+      --run-id) [[ $# -ge 2 ]] || fail "--run-id needs a value"; run_id="$2"; shift 2 ;;
+      --dry-run) dry_run="true"; shift ;;
+      -h|--help) usage; exit 0 ;;
+      *) fail "unknown capture option: $1" ;;
+    esac
+  done
+
+  [[ -n "$project" ]] || fail "--project is required"
+  [[ -n "$feature" ]] || fail "--feature is required"
+  require_slug "project-id" "$project"
+  require_slug "feature-id" "$feature"
+
+  local source_dir blueprint web_dir
+  source_dir="$(find_source_dir "$project")" || fail "source project not found under xcode/: $project"
+  blueprint="$ROOT/docs/项目/$project/项目蓝图.md"
+  [[ -f "$blueprint" ]] || fail "project blueprint not found: docs/项目/$project/项目蓝图.md"
+  web_dir="$ROOT/webapps/$project"
+
+  if [[ -z "$run_id" ]]; then
+    run_id="$(date '+%Y%m%d-%H%M%S')-$feature"
+  fi
+  require_slug "run-id" "$run_id"
+
+  local runs_parent run_dir temp_dir source_rel web_rel
+  runs_parent="$ROOT/.runs/$project"
+  run_dir="$runs_parent/$run_id"
+  temp_dir="$runs_parent/.$run_id.tmp.$$"
+  source_rel="${source_dir#"$ROOT/"}"
+  web_rel="webapps/$project"
+
+  [[ ! -e "$run_dir" ]] || fail "run already exists: .runs/$project/$run_id"
+
+  if [[ "$dry_run" == "true" ]]; then
+    printf 'HARNESS READY\nPROJECT=%s\nFEATURE=%s\nSOURCE=%s\nRUN_DIR=.runs/%s/%s\n' \
+      "$project" "$feature" "$source_rel" "$project" "$run_id"
+    exit 0
+  fi
+
+  mkdir -p "$runs_parent"
+  [[ ! -e "$temp_dir" ]] || fail "temporary run directory already exists"
+  mkdir "$temp_dir"
+  trap 'rm -rf -- "$temp_dir"' EXIT
+
+  cat > "$temp_dir/scope.md" <<EOF
+# 本次任务
+
+| 项目 | 内容 |
+| --- | --- |
+| 项目 | \`$project\` |
+| 功能 | \`$feature\` |
+| 源项目 | \`$source_rel\` |
+| WebApp | \`$web_rel\` |
+| 状态 | 待采集 iOS 证据 |
+
+## 必须完成
+
+1. 使用 codebase-memory-mcp 定位页面入口、所有子组件、依赖和 Assets。
+2. 完成 \`组件映射.md\` 中的可见事实、源码组件和原始资源映射，通过 mapping 检查后才能开始实现 Web。
+3. 在真实 iOS App 中进入该功能，并使用确定的数据状态保存运行证据。
+4. 若任务包含迁移，严格按组件映射实现 Web、运行测试并保存同画布 Web 证据。
+5. 对“对比状态”表中的每个状态运行 \`./harness compare\`，根据差异区域最多精修两轮。
+6. 完成后运行 \`./harness check\`，不得只在聊天中声称完成。
+EOF
+
+  cat > "$temp_dir/组件映射.md" <<EOF
+# ${feature}：iOS→Web 组件映射
+
+> 本文件必须由 codebase-memory-mcp 定位源码后填写。SwiftUI/UIKit 源码和 Assets 是布局与样式的主要事实；截图仅用于确认运行状态。
+
+<!-- HARNESS:MAPPING_PENDING -->
+<!-- HARNESS:SOURCE_TRUTH_PENDING -->
+<!-- HARNESS:ASSETS_PENDING -->
+
+## 源码范围
+
+| 项目 | 结果 |
+| --- | --- |
+| 分析工具 | 待执行 |
+| 页面入口（文件与符号） | 待填写 |
+| 子组件追踪范围 | 待填写 |
+| ViewModel / Model / Service | 待填写 |
+| Assets / Color / Font | 待填写 |
+| 导航入口与出口 | 待填写 |
+
+## 可见事实
+
+| 页面状态 | 可见文字与数据 | 事实来源（源码或本次 iOS 运行） | Web 使用值 |
+| --- | --- | --- | --- |
+| 待填写 | 待填写 | 待填写 | 待填写 |
+
+## 原始资源
+
+| iOS Asset / Font / Symbol | 源文件或系统符号 | Web 使用方式与路径 |
+| --- | --- | --- |
+| 待填写 | 待填写 | 待填写 |
+
+## 组件映射
+
+| iOS 组件（文件与符号） | 原生布局、尺寸与样式 | 数据 / 状态 / 交互 | Web 组件 |
+| --- | --- | --- | --- |
+| 待填写 | 待填写 | 待填写 | 待填写 |
+
+## 不允许猜测的内容
+
+| 项目 | 源码事实或处理方式 |
+| --- | --- |
+| 页面层级与列表方向 | 待填写 |
+| 颜色、字体、间距、圆角 | 待填写 |
+| 源码未明确的动态行为 | 待填写；必须通过运行验证，不得自行设计 |
+
+## 对比状态
+
+| 状态 ID | iOS 截图 | Web URL | 同画布尺寸 |
+| --- | --- | --- | --- |
+| 待填写 | \`ios-<state>.png\` | 待填写 | 待填写 |
+EOF
+
+  cat > "$temp_dir/result.json" <<EOF
+{
+  "project": "$project",
+  "feature": "$feature",
+  "run_id": "$run_id",
+  "status": "CAPTURE_PENDING",
+  "source": "$source_rel",
+  "webapp": "$web_rel",
+  "component_mapping": "组件映射.md",
+  "evidence": {
+    "ios": [],
+    "web": []
+  },
+  "visual_comparisons": []
+}
+EOF
+
+  mv "$temp_dir" "$run_dir"
+  trap - EXIT
+
+  printf 'HARNESS RUN CREATED\nPROJECT=%s\nFEATURE=%s\nSOURCE=%s\nWEBAPP=%s\nRUN_ID=%s\nRUN_DIR=.runs/%s/%s\nNEXT=Use codebase-memory-mcp to complete 组件映射.md, then run check --mode mapping before Web implementation.\n' \
+    "$project" "$feature" "$source_rel" "$web_rel" "$run_id" "$project" "$run_id"
+}
+
+webshot() {
+  local project="" run_id="" state="" url="" width="" height="" scale="3" wait_for=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project) [[ $# -ge 2 ]] || fail "--project needs a value"; project="$2"; shift 2 ;;
+      --run-id) [[ $# -ge 2 ]] || fail "--run-id needs a value"; run_id="$2"; shift 2 ;;
+      --state) [[ $# -ge 2 ]] || fail "--state needs a value"; state="$2"; shift 2 ;;
+      --url) [[ $# -ge 2 ]] || fail "--url needs a value"; url="$2"; shift 2 ;;
+      --width) [[ $# -ge 2 ]] || fail "--width needs a value"; width="$2"; shift 2 ;;
+      --height) [[ $# -ge 2 ]] || fail "--height needs a value"; height="$2"; shift 2 ;;
+      --scale) [[ $# -ge 2 ]] || fail "--scale needs a value"; scale="$2"; shift 2 ;;
+      --wait-for) [[ $# -ge 2 ]] || fail "--wait-for needs a value"; wait_for="$2"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) fail "unknown webshot option: $1" ;;
+    esac
+  done
+
+  [[ -n "$project" && -n "$run_id" && -n "$state" && -n "$url" && -n "$width" && -n "$height" ]] || \
+    fail "webshot requires --project, --run-id, --state, --url, --width, and --height"
+  require_slug "project-id" "$project"
+  require_slug "run-id" "$run_id"
+  require_slug "state" "$state"
+  require_positive_integer "width" "$width"
+  require_positive_integer "height" "$height"
+  require_positive_integer "scale" "$scale"
+  [[ "$url" =~ ^http://(localhost|127\.0\.0\.1)(:[0-9]+)?(/.*)?$ ]] || fail "webshot only accepts a local HTTP URL"
+
+  local run_dir web_dir output
+  run_dir="$ROOT/.runs/$project/$run_id"
+  web_dir="$ROOT/webapps/$project"
+  output="$run_dir/web-$state.png"
+  [[ -d "$run_dir" ]] || fail "run not found: .runs/$project/$run_id"
+  [[ -d "$web_dir/node_modules/playwright" ]] || fail "Playwright is not installed in webapps/$project"
+
+  local args=(
+    "--web-dir=$web_dir"
+    "--url=$url"
+    "--output=$output"
+    "--width=$width"
+    "--height=$height"
+    "--scale=$scale"
+  )
+  if [[ -n "$wait_for" ]]; then args+=("--wait-for=$wait_for"); fi
+  node "$ROOT/scripts/web_screenshot.mjs" "${args[@]}"
+  printf 'WEB SCREENSHOT CAPTURED\nPROJECT=%s\nRUN_ID=%s\nSTATE=%s\nEVIDENCE=.runs/%s/%s/web-%s.png\n' \
+    "$project" "$run_id" "$state" "$project" "$run_id" "$state"
+}
+
+compare_visuals() {
+  local project="" run_id="" state="" ios_name="" web_name="" ios_crop="" web_crop="" threshold="24"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project) [[ $# -ge 2 ]] || fail "--project needs a value"; project="$2"; shift 2 ;;
+      --run-id) [[ $# -ge 2 ]] || fail "--run-id needs a value"; run_id="$2"; shift 2 ;;
+      --state) [[ $# -ge 2 ]] || fail "--state needs a value"; state="$2"; shift 2 ;;
+      --ios) [[ $# -ge 2 ]] || fail "--ios needs a value"; ios_name="$2"; shift 2 ;;
+      --web) [[ $# -ge 2 ]] || fail "--web needs a value"; web_name="$2"; shift 2 ;;
+      --ios-crop) [[ $# -ge 2 ]] || fail "--ios-crop needs a value"; ios_crop="$2"; shift 2 ;;
+      --web-crop) [[ $# -ge 2 ]] || fail "--web-crop needs a value"; web_crop="$2"; shift 2 ;;
+      --threshold) [[ $# -ge 2 ]] || fail "--threshold needs a value"; threshold="$2"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) fail "unknown compare option: $1" ;;
+    esac
+  done
+
+  [[ -n "$project" && -n "$run_id" && -n "$state" && -n "$ios_name" && -n "$web_name" ]] || \
+    fail "compare requires --project, --run-id, --state, --ios, and --web"
+  require_slug "project-id" "$project"
+  require_slug "run-id" "$run_id"
+  require_slug "state" "$state"
+  require_positive_integer "threshold" "$threshold"
+  (( threshold <= 255 )) || fail "threshold must be between 1 and 255"
+
+  local run_dir ios_file web_file prefix report result_file
+  run_dir="$ROOT/.runs/$project/$run_id"
+  result_file="$run_dir/result.json"
+  [[ -d "$run_dir" ]] || fail "run not found: .runs/$project/$run_id"
+  [[ -f "$result_file" ]] || fail "result.json is missing"
+  [[ -d "$ROOT/node_modules/pixelmatch" && -d "$ROOT/node_modules/ssim.js" ]] || \
+    fail "visual comparison tools are not installed; run npm install in the repository root"
+  ios_file="$(resolve_run_file "$run_dir" "$ios_name")"
+  web_file="$(resolve_run_file "$run_dir" "$web_name")"
+  prefix="$run_dir/visual-$state"
+
+  local args=(--ios "$ios_file" --web "$web_file" --output-prefix "$prefix" --threshold "$threshold")
+  if [[ -n "$ios_crop" ]]; then args+=(--ios-crop "$ios_crop"); fi
+  if [[ -n "$web_crop" ]]; then args+=(--web-crop "$web_crop"); fi
+  python3 "$ROOT/scripts/visual_compare.py" "${args[@]}" >/dev/null
+  report="$prefix.json"
+
+  node - "$result_file" "$state" "$(basename -- "$report")" <<'NODE'
+const fs = require('node:fs');
+const [file, state, reportFile] = process.argv.slice(2);
+const result = JSON.parse(fs.readFileSync(file, 'utf8'));
+const report = JSON.parse(fs.readFileSync(`${require('node:path').dirname(file)}/${reportFile}`, 'utf8'));
+result.visual_comparisons = Array.isArray(result.visual_comparisons) ? result.visual_comparisons : [];
+result.visual_comparisons = result.visual_comparisons.filter((item) => item.state !== state);
+result.visual_comparisons.push({
+  state,
+  report: reportFile,
+  comparison_engine: report.engine?.primary,
+  changed_ratio: report.changed_ratio,
+  ssim_score: report.ssim_score,
+  mean_channel_error: report.mean_channel_error,
+});
+const temp = `${file}.tmp-${process.pid}`;
+fs.writeFileSync(temp, `${JSON.stringify(result, null, 2)}\n`);
+fs.renameSync(temp, file);
+NODE
+
+  printf 'VISUAL COMPARISON CREATED\nPROJECT=%s\nRUN_ID=%s\nSTATE=%s\nREPORT=.runs/%s/%s/visual-%s.json\nCOMPARISON=.runs/%s/%s/visual-%s-comparison.png\n' \
+    "$project" "$run_id" "$state" "$project" "$run_id" "$state" "$project" "$run_id" "$state"
+  node -e "const r=require(process.argv[1]); console.log('ENGINE='+r.engine.primary); console.log('CHANGED_RATIO='+r.changed_ratio); console.log('SSIM_SCORE='+r.ssim_score); console.log('MEAN_CHANNEL_ERROR='+r.mean_channel_error)" "$report"
+}
+
+check_run() {
+  local project="" run_id="" mode="complete"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project) [[ $# -ge 2 ]] || fail "--project needs a value"; project="$2"; shift 2 ;;
+      --run-id) [[ $# -ge 2 ]] || fail "--run-id needs a value"; run_id="$2"; shift 2 ;;
+      --mode) [[ $# -ge 2 ]] || fail "--mode needs a value"; mode="$2"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) fail "unknown check option: $1" ;;
+    esac
+  done
+
+  [[ -n "$project" ]] || fail "--project is required"
+  [[ -n "$run_id" ]] || fail "--run-id is required"
+  require_slug "project-id" "$project"
+  require_slug "run-id" "$run_id"
+  [[ "$mode" == "mapping" || "$mode" == "ios" || "$mode" == "complete" ]] || fail "--mode must be mapping, ios, or complete"
+
+  local run_dir result_file mapping_file ios_evidence web_evidence status
+  run_dir="$ROOT/.runs/$project/$run_id"
+  result_file="$run_dir/result.json"
+  mapping_file="$run_dir/组件映射.md"
+  [[ -d "$run_dir" ]] || fail "run not found: .runs/$project/$run_id"
+  [[ -f "$run_dir/scope.md" ]] || fail "scope.md is missing"
+  [[ -f "$result_file" ]] || fail "result.json is missing"
+
+  if [[ "$mode" == "mapping" || "$mode" == "complete" ]]; then
+    [[ -f "$mapping_file" ]] || fail "组件映射.md is missing"
+    if grep -qE 'HARNESS:MAPPING_PENDING|待执行|待填写' "$mapping_file"; then
+      fail "组件映射.md is incomplete; use codebase-memory-mcp and replace every pending field"
+    fi
+    grep -q 'HARNESS:SOURCE_TRUTH_CONFIRMED' "$mapping_file" || \
+      fail "组件映射.md must confirm visible text/data from source or the current iOS run"
+    grep -q 'HARNESS:ASSETS_CONFIRMED' "$mapping_file" || \
+      fail "组件映射.md must confirm exact Asset/font/symbol handling"
+    grep -qE '^\| 分析工具 \| `?codebase-memory-mcp`? \|$' "$mapping_file" || \
+      fail "组件映射.md must record codebase-memory-mcp as the analysis tool"
+    grep -qE '\.(swift|m|mm|storyboard|xib)(:[0-9]+)?' "$mapping_file" || \
+      fail "组件映射.md must cite at least one iOS source file"
+    grep -qE 'Assets\.xcassets|\.(ttf|otf)|SF Symbols|无源 (Asset|资源)' "$mapping_file" || \
+      fail "组件映射.md must record source Assets/fonts/symbols or explicitly state that none are used"
+  fi
+
+  if [[ "$mode" == "mapping" ]]; then
+    status="MAPPING_READY"
+  else
+    ios_evidence="$(find "$run_dir" -maxdepth 1 -type f \( -name 'ios-*.png' -o -name 'ios_*.png' \) -print -quit)"
+    [[ -n "$ios_evidence" ]] || fail "no iOS screenshot found; save ios-*.png in the run directory"
+  fi
+
+  if [[ "$mode" == "complete" ]]; then
+    web_evidence="$(find "$run_dir" -maxdepth 1 -type f \( -name 'web-*.png' -o -name 'web_*.png' \) -print -quit)"
+    [[ -n "$web_evidence" ]] || fail "no Web screenshot found; save web-*.png in the run directory"
+    node "$ROOT/scripts/check_visual_coverage.mjs" \
+      "--mapping=$mapping_file" "--result=$result_file" "--run-dir=$run_dir"
+    status="COMPLETE"
+  elif [[ "$mode" == "ios" ]]; then
+    status="IOS_CAPTURED"
+  fi
+
+  node - "$result_file" "$status" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const [file, status] = process.argv.slice(2);
+const result = JSON.parse(fs.readFileSync(file, 'utf8'));
+const names = fs.readdirSync(path.dirname(file));
+result.status = status;
+result.checked_at = new Date().toISOString();
+result.evidence = {
+  ios: names.filter((name) => /^ios[-_].*\.png$/i.test(name)).sort(),
+  web: names.filter((name) => /^web[-_].*\.png$/i.test(name)).sort()
+};
+result.visual_comparisons = (Array.isArray(result.visual_comparisons) ? result.visual_comparisons : [])
+  .filter((item) => typeof item.report === 'string' && names.includes(item.report));
+const temp = `${file}.tmp-${process.pid}`;
+fs.writeFileSync(temp, `${JSON.stringify(result, null, 2)}\n`);
+fs.renameSync(temp, file);
+NODE
+
+  printf 'HARNESS CHECK PASSED\nPROJECT=%s\nRUN_ID=%s\nMODE=%s\nSTATUS=%s\nRESULT=.runs/%s/%s/result.json\n' \
+    "$project" "$run_id" "$mode" "$status" "$project" "$run_id"
+}
+
+command="${1:-help}"
+if [[ $# -gt 0 ]]; then shift; fi
+case "$command" in
+  capture) capture "$@" ;;
+  webshot) webshot "$@" ;;
+  compare) compare_visuals "$@" ;;
+  check) check_run "$@" ;;
+  help|-h|--help) usage ;;
+  *) fail "unknown command: $command" ;;
+esac

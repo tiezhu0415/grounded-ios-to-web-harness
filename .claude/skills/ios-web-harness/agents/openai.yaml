@@ -1,0 +1,4 @@
+interface:
+  display_name: "iOS→Web Harness"
+  short_description: "Run faithful iOS-to-Web capture and migration workflows"
+  default_prompt: "Use $ios-web-harness to capture or migrate a selected iOS feature."

@@ -5,9 +5,13 @@ source:
   simulator: CHANGE_ME
 
 web:
-  path: CHANGE_ME
+  path: ./webapps/CHANGE_ME
   framework: react
   test: playwright
+
+visual:
+  device_scale: 3
+  max_refinement_rounds: 2
 
 limits:
   build_fix_rounds: 2

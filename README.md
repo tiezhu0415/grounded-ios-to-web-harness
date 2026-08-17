@@ -1,33 +1,52 @@
-# iOS→Web Harness MVP
+# iOS→Web Harness
 
-这是一个计划在 1～2 天内验证价值的轻量 iOS→Web Harness。
+用户指定一个 iOS 功能，AI 自动运行源 App、读取源码、忠实实现 Web，并用同状态、同画布视觉差异做最多两轮精修，最后由用户打开链接查看结果。
 
-它不追求一次迁移完整 App，也不建设通用 Agent 平台。首个目标是：选择一个真实、可运行的 iOS 项目，把其中一个小功能迁移为 Web，并完成自动验证和人工验收。
+## 我想了解或使用项目
 
-## 项目负责人入口
+1. [阅读总技术方案](docs/项目技术方案.md)
+2. [选择项目和功能](docs/项目清单.md)
+3. [查看已经实现的 WebApp](docs/WebApp查看清单.md)
 
-请从以下文档开始：
+当前项目：`eCommerce-main`。个人资料、Store 分类入口、子分类和单列商品列表已按源码、原始资源与同画布差异完成修正；商品详情仍等待同样流程精修。
 
-1. [项目总览](docs/项目负责人/项目总览.md)
-2. [两天实施计划](docs/项目负责人/两天实施计划.md)
-3. [源项目蓝图](docs/项目负责人/源项目蓝图.md)
-4. [Web迁移计划](docs/项目负责人/Web迁移计划.md)
-5. [WebApp查看清单](docs/项目负责人/WebApp查看清单.md)
-6. [最终验收报告](docs/项目负责人/最终验收报告.md)
+## 开始一次任务
 
-## 当前状态
+你只需要告诉 AI：
 
-| 项目 | 状态 |
-| --- | --- |
-| 方案 | `APPROVED — CONTINUE` |
-| Harness 工作方法 | `SMOKE_VERIFIED — ONE PROJECT` |
-| 源 iOS 项目 | `eCommerce-main`，已建立本地 Git 输入身份并启动；登录后 Store/分类/商品列表已验证 |
-| WebApp | 商品列表与分类筛选已实现；手机优先布局已验证 |
-| 自动验证 | 移动端 Playwright 7/7 通过；iOS 目标功能运行复验已完成 |
-| 下一步 | 准备第二项目通用性验证 |
+```text
+迁移 ecommerce-main 的购物车功能。
+```
 
-AI 执行者应先阅读 [Authority](docs/00-authority.md)、`CLAUDE.md` 和 `.planning/HANDOFF.md`。
+AI 会自动调用 Harness、codebase-memory-mcp 和组件映射流程，不需要你重复提示内部步骤。
 
-## 通用 Harness 与示例
+```bash
+./harness capture --project ecommerce-main --feature product-detail
+```
 
-`harness.example.yaml`、Authority、planning 和 handoff 规则属于通用 Harness。`xcode/eCommerce-main`、`webapp/` 和当前项目负责人文档是首个 eCommerce 示例产物，不代表 Harness 针对商品功能写死。当前只验证过一个项目，跨项目通用性尚未证明。
+命令会创建唯一 run 目录。AI 必须把本次范围、源码与资源映射、iOS/Web 证据、视觉差异结果和 `result.json` 放在该目录，再执行 `./harness check`。这就是“正在使用 Harness”的可见证据。
+
+首次使用视觉比较工具时，在仓库根目录执行一次 `npm install`。
+
+内部固定流程：
+
+```text
+源码与 Assets 定事实 → 固定相同运行状态 → 生成 Web 首版 → 同画布截图 → Pixelmatch 主差异 + SSIM 辅助分数 → 最多两轮局部精修 → 用户验收
+```
+
+组件映射表中列出的每个状态都必须有比较报告。视觉分数只用于发现问题，不设置自动通过线，也不会增加用户审批步骤。
+
+## AI 接手项目
+
+先读取 `AGENTS.md`、当前项目的 `项目蓝图.md` 和 `.planning/HANDOFF.md`。
+
+Claude Code 还必须读取项目 Skill：`.claude/skills/ios-web-harness/SKILL.md`。
+
+项目目录规则：
+
+```text
+xcode/<project-id>/
+webapps/<project-id>/
+docs/项目/<project-id>/
+.runs/<project-id>/<run-id>/
+```
