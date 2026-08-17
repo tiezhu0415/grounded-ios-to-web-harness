@@ -8,20 +8,20 @@
 2. [选择项目和功能](docs/项目清单.md)
 3. [查看已经实现的 WebApp](docs/WebApp查看清单.md)
 
-当前项目：`eCommerce-main`。个人资料、Store 分类入口、子分类和单列商品列表已按源码、原始资源与同画布差异完成修正；商品详情仍等待同样流程精修。
+当前分支：`codex/ecommerce-full-migration`。这是从零迁移 `eCommerce-main` 全项目的独立实验分支，目标 WebApp 已清空；原MVP保存在提交 `51bb4e9` 和标签 `ecommerce-harness-mvp-baseline-20260817`。
 
 ## 开始一次任务
 
 你只需要告诉 AI：
 
 ```text
-迁移 ecommerce-main 的购物车功能。
+从零迁移 ecommerce-main 全项目；按蓝图逐模块执行 Harness，最后交付一个完整 WebApp。
 ```
 
 AI 会自动调用 Harness、codebase-memory-mcp 和组件映射流程，不需要你重复提示内部步骤。
 
 ```bash
-./harness capture --project ecommerce-main --feature product-detail
+./harness capture --project ecommerce-main --feature <module-id>
 ```
 
 命令会创建唯一 run 目录。AI 必须把本次范围、源码与资源映射、iOS/Web 证据、视觉差异结果和 `result.json` 放在该目录，再执行 `./harness check`。这就是“正在使用 Harness”的可见证据。

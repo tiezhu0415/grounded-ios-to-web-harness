@@ -19,7 +19,4 @@ webapps/
 6. 不得创建新的根目录 `webapp/`，不得把不同源 App 混放在同一项目。
 7. 对应蓝图必须位于 `docs/项目/<project-id>/项目蓝图.md`，并登记到 `docs/项目清单.md`。
 
-当前项目 `ecommerce-main` 的直接验证地址：
-
-- 商品列表：`http://localhost:5173/store`
-- 商品详情：`http://localhost:5173/products/10000`
+当前实验分支已清空 `webapps/ecommerce-main/` 的旧实现。AI完成全项目迁移后，只在该目录生成一套集成 WebApp，并把最终地址写入 `docs/WebApp查看清单.md`。
