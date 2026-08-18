@@ -25,6 +25,45 @@ function walk(directory) {
   });
 }
 
+function withoutDebugBlocks(source) {
+  return source.replace(/#if\s+DEBUG[\s\S]*?#endif/g, (block) => block.replace(/[^\n]/g, ' '));
+}
+
+export function discoverStateCandidates(sourceDirectory) {
+  const candidates = [];
+  const files = walk(sourceDirectory)
+    .filter((file) => /\.(swift|m|mm|h)$/.test(file))
+    .sort();
+  for (const file of files) {
+    const source = fs.readFileSync(file, 'utf8');
+    const visibleSource = withoutDebugBlocks(source);
+    if (!/\bView\b|ViewController|@interface|@implementation/.test(visibleSource)) continue;
+    const relativePath = path.relative(sourceDirectory, file).split(path.sep).join('/');
+    for (const [index, rawLine] of visibleSource.split(/\r?\n/).entries()) {
+      const line = rawLine.trim();
+      let kind = '';
+      if (/\.(navigationDestination)\s*\(/.test(line)) kind = 'navigation';
+      else if (/\.(sheet|fullScreenCover|alert|confirmationDialog|popover)\s*\(/.test(line)) kind = 'presentation';
+      else if (/^(?:}\s*)?(?:else\s+)?if\b|^switch\b/.test(line)) kind = 'condition';
+      if (!kind) continue;
+      const expression = line.slice(0, 240);
+      const key = `${relativePath}:${index + 1}:${expression}`;
+      candidates.push({
+        id: `state-${crypto.createHash('sha256').update(key).digest('hex').slice(0, 12)}`,
+        source: relativePath,
+        line: index + 1,
+        kind,
+        expression,
+        status: 'PENDING',
+        screen_ids: [],
+        state_ids: [],
+        note: '',
+      });
+    }
+  }
+  return candidates;
+}
+
 export function discoverIosViews(sourceDirectory) {
   const files = walk(sourceDirectory)
     .filter((file) => /\.(swift|m|mm|h|storyboard|xib)$/.test(file))
@@ -33,7 +72,7 @@ export function discoverIosViews(sourceDirectory) {
 
   for (const file of files) {
     const source = fs.readFileSync(file, 'utf8');
-    const discoverySource = source.replace(/#if\s+DEBUG[\s\S]*?#endif/g, '');
+    const discoverySource = withoutDebugBlocks(source);
     const relativePath = path.relative(sourceDirectory, file).split(path.sep).join('/');
     let declarations = [];
     if (file.endsWith('.swift')) {
@@ -65,6 +104,11 @@ export function discoverIosViews(sourceDirectory) {
         route: '',
         test: '',
         note: '',
+        discovery: {
+          source: { status: 'FOUND', evidence: `${relativePath}#${declaration}` },
+          graph: { status: 'PENDING', navigation_entry: '', evidence: [], inbound: [], outbound: [] },
+          runtime: { status: 'PENDING', flow_state_ids: [] },
+        },
       });
     }
   }
@@ -79,6 +123,15 @@ export function createCoverage(project, sourceDirectory) {
     generated_at: new Date().toISOString(),
     source: sourceDirectory,
     completion_rule: 'Every source screen must be IMPLEMENTED with a Web route and behavior test. EXCLUDED and PENDING keep the app incomplete.',
+    reconciliation_policy: 'Source declarations, codebase-memory navigation targets, source UI-state branches, and Maestro runtime visits must agree before APP_COMPLETE.',
+    graph_discovery: {
+      status: 'PENDING',
+      entry_points: [],
+      targets: [],
+      evidence: [],
+      note: '',
+    },
+    state_candidates: discoverStateCandidates(sourceDirectory),
     screens: discovered.filter((item) => item.kind === 'screen'),
     supporting_components: discovered
       .filter((item) => item.kind === 'component')

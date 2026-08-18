@@ -1,12 +1,16 @@
 # Claude Code 入口
 
-先读取 `AGENTS.md`，迁移任务自动使用 `.claude/skills/ios-web-harness/SKILL.md`。
+先读 `AGENTS.md`，迁移任务自动使用 `.claude/skills/ios-web-harness/SKILL.md`。
 
-- 整个 App：先执行 `./harness prepare --project <project-id>`，先建手机外壳、全局导航和路由，再按 `项目覆盖.json` 实现。
-- 单个功能：执行 `./harness capture --project <project-id> --feature <feature-id>`，用于源码映射、运行证据和视觉精修。
+Claude 负责理解不同 App 的页面、状态和导航，然后生成当前项目的 Maestro 与 Playwright 流程。Harness 本身不包含任何项目或业务专用提示词。
 
-不得把单功能的 `FEATURE_EVIDENCE_COMPLETE` 写成整项目完成。整项目只能在以下命令通过后称为完成：
+整项目最终必须运行：
 
 ```bash
+./harness ios-run --project <project-id> --run-id <full-app-run-id>
+./harness reconcile --project <project-id> --run-id <full-app-run-id>
+./harness visual-check --project <project-id> --run-id <full-app-run-id>
 ./harness check --project <project-id> --run-id <full-app-run-id> --mode app
 ```
+
+只有最后返回 `APP_COMPLETE` 才能报告整个 App 完成。

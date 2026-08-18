@@ -1,49 +1,68 @@
 ---
 name: ios-web-harness
-description: Migrate or verify either a complete iOS App or one named feature. Full-app work starts from an automatically generated source-view inventory, builds the integrated mobile shell and navigation first, then verifies coverage, behavior, and selected visual states without intermediate user gates.
+description: Migrate or verify any iOS App by deriving its screens and runtime states from source, generating project-specific Maestro and Playwright flows, and requiring matched per-screen visual evidence without hard-coded business prompts.
 ---
 
 # iOS→Web 轻量 Harness
 
-## 先判断范围
+## 通用边界
 
-读取 `AGENTS.md`、`docs/项目技术方案.md`、当前项目蓝图和 `.planning/HANDOFF.md`。
+Harness 只规定流程和证据格式，不知道某个 App 有什么业务功能。
 
-- 用户说“整个项目/整个 App”：执行 `./harness prepare --project <project-id>`。
-- 用户只说某个功能：执行 `./harness capture --project <project-id> --feature <feature-id>`。
+Claude 必须使用 codebase-memory-mcp 和 iOS 运行结果，为当前 App 推导：
 
-用户不需要重复说明 codebase-memory、组件映射、Assets 或禁止重设计等内部规则。
+- 真实页面与入口；
+- 导航路径与交互；
+- 需要对比的页面状态；
+- Maestro 点击流程；
+- Playwright 对应流程。
+
+不要要求用户重复说明这些内部步骤。
 
 ## 整个 App
 
-1. 使用 `prepare` 返回的唯一 full-app run；不要为每个模块创建一套项目或用单功能 Run 宣称整项目完成。
-2. `项目覆盖.json` 来自 iOS `Views` 自动扫描。用 codebase-memory-mcp 补充导航、依赖和业务关系，但不得删除不想实现的源页面。
-3. 编写业务页面前先完成：统一手机 App Shell、原生顶层导航、全部页面路由、共享状态/数据层。
-4. 按覆盖清单逐项实现。只需为源 screen 填写 `IMPLEMENTED`、Web 文件、路由和行为测试；supporting components 只供分析参考，不逐项维护状态。
-5. 外部服务不可用时可以记录真实限制，但该页面保持 `EXCLUDED` 或 `PENDING`，整个 App 仍是未完成。
-6. 为页面和关键按钮编写真实 Playwright 测试；`No tests found` 是失败。
-7. 对关键视觉状态使用下面的单功能视觉流程精修。
-8. 最终执行：
+1. 若已有 full-app Run，使用它；否则执行 `./harness prepare --project <project-id>`。
+2. 读取 `项目覆盖.json` 和 `visual-matrix.json`。
+3. 用 codebase-memory-mcp 从 App 入口追踪导航目标，区分真实页面、App Shell 和支持组件，确认路由、数据和 Assets。
+4. 将关系图结果写回 `项目覆盖.json`：
+   - `graph_discovery` 标记 `COMPLETE`，记录入口、全部目标和查询证据；
+   - 每个页面的 `discovery.graph` 标记 `CONFIRMED`，记录入口和关系证据；
+   - 关系图发现但扫描清单缺少的真实页面，补入 `screens` 和 `visual-matrix.json`，不要静默忽略。
+5. 处理 `state_candidates`：每个源码分支标记为 `MAPPED` 并填写页面/视觉状态，或标记 `NOT_USER_VISIBLE` 并写明理由。
+6. 根据当前 App 编辑 `visual-matrix.json`：每个可见页面至少一个必需状态；明显的空/有数据、成功/错误、登录/未登录状态要分开，并在 `source_evidence` 引用对应 candidate id。
+7. 为每个状态创建 `flows/ios/<state-id>.yaml`。优先通过登录、点击、输入等真实交互到达；外部数据不稳定时可使用仅 DEBUG 生效的 fixture。
+8. 每个 Maestro Flow 必须保存对应 `ios/<state-id>.png`，并可由以下命令重复执行：
 
 ```bash
-./harness check --project <project-id> --run-id <full-app-run-id> --mode app
+./harness ios-run --project <project-id> --run-id <run-id>
 ```
 
-只有返回 `APP_COMPLETE` 才能向用户报告整个项目完成。
+9. 运行三方对账；未通过时先补页面、状态或 Flow，不得开始宣称迁移完整：
 
-## 单功能视觉流程
+```bash
+./harness reconcile --project <project-id> --run-id <run-id>
+```
 
-1. 用 codebase-memory-mcp 查找入口、所有子组件、ViewModel/Model/Service、导航和 Assets。
-2. 把源码事实写入 run 的 `组件映射.md`，替换三个 pending 标记后执行 `check --mode mapping`。
-3. 运行 iOS 功能，保存与 Web 相同数据、状态、资源结果和画布的 `ios-<state>.png`。
-4. 按源码与 Assets 实现；截图只确认动态状态，不允许凭截图自行重新设计。
-5. 使用 `webshot` 和 `compare` 生成 Pixelmatch + SSIM 报告，按最大差异区域最多精修两轮。
-6. 执行 `check --mode complete`。它只产生 `FEATURE_EVIDENCE_COMPLETE`，不能代表整个 App 完成。
+10. 建立统一手机 App Shell、全局导航、路由与共享状态，再按覆盖清单实现页面。
+11. 为每个视觉状态在 Playwright 中创建唯一测试 ID，执行与 iOS 相同的数据和操作，保存 `web/<state-id>.png`。`visual-matrix.json` 中的 `web_test` 使用 `relative-file#unique-test-id`。
+12. 执行批量对比：
+
+```bash
+./harness visual-check --project <project-id> --run-id <run-id>
+```
+
+13. 根据 comparison 图和最高差异区域精修，最多两轮。不得用修改阈值或删除必需状态的方式绕过。
+14. 最后执行 `check --mode app`；缺少三方对账、任何页面、Flow、双端截图、唯一 Web 测试或视觉报告都不得返回 `APP_COMPLETE`。
+
+## 实现自由
+
+以下由 Claude 自主决定：React 组件拆分、CSS 组织、状态管理、数据层、实现顺序与修复方法。
+
+以下不允许自行改写：用户可见内容、原 Assets/字体/颜色、页面层级、核心交互与 iOS 实际状态。
 
 ## 限制
 
-- 用户只在开始指定范围、结束查看结果；不增加中间审批。
-- 不虚构登录、支付、Firebase 或 Stripe 成功。
-- 不创建第二份蓝图或新的治理文档。
-- 不建设通用 Runner、语义 Analyzer、复杂 Gate、Schema、数据库或 Agent 平台。
-- 不调用 Codex 审查，除非用户要求或同一问题两轮仍失败。
+- 不写死任何项目名、页面名、按钮名或业务流程；
+- 不使用一张登录图代替全 App 的视觉证据；
+- 不伪造 Firebase、Stripe 或其他外部服务成功；
+- 不增加治理文档或调用 Codex，除非用户明确要求。

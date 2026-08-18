@@ -1,41 +1,39 @@
 # iOS→Web 轻量 Harness
 
-目标：让 AI 从 iOS 源码、Assets 和运行状态出发，生成一个完整、连贯、手机尺寸的 WebApp。
+目标：让 AI 从任意 iOS App 的源码、Assets 和真实运行页面出发，生成完整、连贯、手机尺寸的 WebApp。
 
-## 当前实验
+## 用户怎么用
 
-| 项目 | 状态 |
-| --- | --- |
-| iOS 源项目 | `xcode/eCommerce-main`，已固定在 commit `4863146` |
-| WebApp | 不存在，等待从零生成 |
-| 分支 | `codex/ecommerce-cleanroom-v2` |
-| Full-app Run | `.runs/ecommerce-main/20260818-cleanroom-full-app` |
-
-## 怎么用
-
-用户只需说：
+只需说：
 
 ```text
-把 ecommerce-main 整个项目迁移成 WebApp。
+把 <project-id> 整个项目迁移成 WebApp。
 ```
 
-AI 自动执行：
+Harness 内部流程：
 
 ```text
-读取项目覆盖清单
-→ 用 codebase-memory 确认页面、导航、依赖和 Assets
-→ 建立手机 App Shell、全局导航和路由
-→ 按源码逐页实现
-→ Playwright 验证行为
-→ 关键页面做 iOS/Web 视觉对比
+扫描源码页面和状态分支
+→ codebase-memory 从 App 入口追踪导航页面
+→ Claude 生成当前 App 的 Maestro Flow
+→ Maestro 逐页点击 iOS 并截图
+→ 三方对账：源码、关系图、实际访问不能有遗漏
+→ Claude 实现 WebApp
+→ Playwright 执行同样状态并截图
+→ Pixelmatch + SSIM 逐页对比和精修
 → 用户打开链接验收
 ```
 
-最终只有下面命令返回 `APP_COMPLETE` 才能称为整项目完成：
+Harness 不写死业务功能。Claude 负责理解每个 App，Maestro、Playwright 和视觉比较器负责可重复执行与留证。
 
-```bash
-./harness check --project ecommerce-main --run-id 20260818-cleanroom-full-app --mode app
-```
+## 当前 ecommerce-main
+
+| 项目 | 状态 |
+| --- | --- |
+| 旧实验 | 已移出仓库，不作为新迁移输入 |
+| 新 WebApp | 尚未生成 |
+| 新 full-app Run | 尚未创建 |
+| 最终状态 | `NOT_STARTED` |
 
 ## 只看这些
 

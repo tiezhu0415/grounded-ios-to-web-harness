@@ -69,3 +69,31 @@ test('an excluded source screen keeps a full-app run incomplete', () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /EXCLUDED/);
 });
+
+test('a codebase-memory navigation target can promote a scanned component to a required screen', () => {
+  const { directory, source, web } = fixture();
+  const coverageFile = path.join(directory, 'coverage.json');
+  const coverage = createCoverage('demo', source);
+  const promoted = coverage.supporting_components.find((item) => item.declaration === 'CardView');
+  coverage.supporting_components = coverage.supporting_components.filter((item) => item !== promoted);
+  coverage.screens.push({
+    ...promoted,
+    status: 'IMPLEMENTED',
+    web: 'src/Home.tsx',
+    route: '/card',
+    test: 'e2e/app.spec.ts',
+    discovery: {
+      ...promoted.discovery,
+      graph: { status: 'CONFIRMED', navigation_entry: 'HomeView', evidence: ['trace_path'], inbound: [], outbound: [] },
+    },
+  });
+  for (const item of coverage.screens.filter((item) => item.declaration === 'HomeView')) {
+    item.status = 'IMPLEMENTED';
+    item.web = 'src/Home.tsx';
+    item.route = '/home';
+    item.test = 'e2e/app.spec.ts';
+  }
+  fs.writeFileSync(coverageFile, JSON.stringify(coverage));
+  const result = runCheck(coverageFile, source, web);
+  assert.equal(result.status, 0, result.stderr);
+});

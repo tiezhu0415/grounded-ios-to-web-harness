@@ -8,18 +8,24 @@ usage() {
 Usage:
   ./harness prepare --project <project-id> [--run-id <run-id>] [--dry-run]
   ./harness capture --project <project-id> --feature <feature-id> [--run-id <run-id>] [--dry-run]
+  ./harness ios-run --project <project-id> --run-id <run-id> [--dry-run]
+  ./harness reconcile --project <project-id> --run-id <run-id>
+  ./harness visual-check --project <project-id> --run-id <run-id>
   ./harness webshot --project <project-id> --run-id <run-id> --state <state> --url <local-url> --width <px> --height <px> [--scale <n>] [--wait-for <selector>]
   ./harness compare --project <project-id> --run-id <run-id> --state <state> --ios <ios.png> --web <web.png> [--ios-crop x,y,w,h] [--web-crop x,y,w,h] [--threshold 1-255]
   ./harness check   --project <project-id> --run-id <run-id> [--mode mapping|ios|complete|app]
   ./harness help
 
 Examples:
-  ./harness prepare --project ecommerce-main
-  ./harness capture --project ecommerce-main --feature product-detail
-  ./harness webshot --project ecommerce-main --run-id 20260812-170000-product-detail --state detail --url http://localhost:5173/products/10000 --width 402 --height 874 --scale 3
-  ./harness compare --project ecommerce-main --run-id 20260812-170000-product-detail --state detail --ios ios-detail.png --web web-detail.png
-  ./harness check --project ecommerce-main --run-id 20260812-170000-product-detail --mode mapping
-  ./harness check --project ecommerce-main --run-id 20260812-170000-product-detail --mode ios
+  ./harness prepare --project demo-app
+  ./harness ios-run --project demo-app --run-id 20260818-full-app
+  ./harness reconcile --project demo-app --run-id 20260818-full-app
+  ./harness visual-check --project demo-app --run-id 20260818-full-app
+  ./harness capture --project demo-app --feature example-feature
+  ./harness webshot --project demo-app --run-id 20260818-example-feature --state default --url http://localhost:5173/example --width 402 --height 874 --scale 3
+  ./harness compare --project demo-app --run-id 20260818-example-feature --state default --ios ios-default.png --web web-default.png
+  ./harness check --project demo-app --run-id 20260818-example-feature --mode mapping
+  ./harness check --project demo-app --run-id 20260818-example-feature --mode ios
 EOF
 }
 
@@ -120,13 +126,17 @@ prepare_app() {
 | 源项目 | \`$source_rel\` |
 | WebApp | \`$web_rel\` |
 | 目标 | 先完成统一手机外壳和全局导航，再按源码覆盖清单迁移整个 App |
-| 完成定义 | 所有源页面已实现、行为测试通过、手机外壳检查通过；子组件清单只供分析参考 |
+| 完成定义 | 源码、关系图和实际访问完成对账；所有页面已实现，并通过行为、手机外壳和逐页视觉检查 |
 
-视觉比较用于精修关键状态，不单独代表全项目完成。
+子组件清单只供分析参考；视觉数字帮助定位差异，最终仍由用户验收。
 EOF
 
   node "$ROOT/scripts/app_inventory.mjs" \
     "--project=$project" "--source=$source_dir" "--output=$temp_dir/项目覆盖.json" >/dev/null
+  node "$ROOT/scripts/visual_matrix.mjs" \
+    "--coverage=$temp_dir/项目覆盖.json" "--output=$temp_dir/visual-matrix.json" >/dev/null
+  node "$ROOT/scripts/init_reconciliation.mjs" \
+    "--coverage=$temp_dir/项目覆盖.json" "--matrix=$temp_dir/visual-matrix.json" "--source=$source_dir" >/dev/null
 
   cat > "$temp_dir/result.json" <<EOF
 {
@@ -137,14 +147,97 @@ EOF
   "source": "$source_rel",
   "webapp": "$web_rel",
   "coverage": "项目覆盖.json",
+  "visual_matrix": "visual-matrix.json",
+  "reconciliation_status": "PENDING",
   "visual_comparisons": []
 }
 EOF
 
   mv "$temp_dir" "$run_dir"
   trap - EXIT
-  printf 'HARNESS APP RUN CREATED\nPROJECT=%s\nSOURCE=%s\nWEBAPP=%s\nRUN_ID=%s\nRUN_DIR=.runs/%s/%s\nNEXT=Build the integrated mobile App Shell first, then update 项目覆盖.json from source evidence.\n' \
+  printf 'HARNESS APP RUN CREATED\nPROJECT=%s\nSOURCE=%s\nWEBAPP=%s\nRUN_ID=%s\nRUN_DIR=.runs/%s/%s\nNEXT=Analyze the App, update 项目覆盖.json and visual-matrix.json, then create repeatable Maestro and Playwright flows.\n' \
     "$project" "$source_rel" "$web_rel" "$run_id" "$project" "$run_id"
+}
+
+reconcile() {
+  local project="" run_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project) [[ $# -ge 2 ]] || fail "--project needs a value"; project="$2"; shift 2 ;;
+      --run-id) [[ $# -ge 2 ]] || fail "--run-id needs a value"; run_id="$2"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) fail "unknown reconcile option: $1" ;;
+    esac
+  done
+  [[ -n "$project" && -n "$run_id" ]] || fail "reconcile requires --project and --run-id"
+  require_slug "project-id" "$project"
+  require_slug "run-id" "$run_id"
+  local run_dir coverage_file matrix_file
+  run_dir="$ROOT/.runs/$project/$run_id"
+  coverage_file="$run_dir/项目覆盖.json"
+  matrix_file="$run_dir/visual-matrix.json"
+  [[ -f "$coverage_file" && -f "$matrix_file" ]] || fail "coverage or visual matrix is missing"
+  node "$ROOT/scripts/check_reconciliation.mjs" \
+    "--coverage=$coverage_file" "--matrix=$matrix_file" "--run-dir=$run_dir"
+  node - "$run_dir/result.json" <<'NODE'
+const fs = require('node:fs');
+const file = process.argv[2];
+const result = JSON.parse(fs.readFileSync(file, 'utf8'));
+result.reconciliation_status = 'COMPLETE';
+result.reconciled_at = new Date().toISOString();
+const temporary = `${file}.tmp-${process.pid}`;
+fs.writeFileSync(temporary, `${JSON.stringify(result, null, 2)}\n`);
+fs.renameSync(temporary, file);
+NODE
+}
+
+ios_run() {
+  local project="" run_id="" dry_run="false"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project) [[ $# -ge 2 ]] || fail "--project needs a value"; project="$2"; shift 2 ;;
+      --run-id) [[ $# -ge 2 ]] || fail "--run-id needs a value"; run_id="$2"; shift 2 ;;
+      --dry-run) dry_run="true"; shift ;;
+      -h|--help) usage; exit 0 ;;
+      *) fail "unknown ios-run option: $1" ;;
+    esac
+  done
+  [[ -n "$project" && -n "$run_id" ]] || fail "ios-run requires --project and --run-id"
+  require_slug "project-id" "$project"
+  require_slug "run-id" "$run_id"
+  local run_dir matrix_file coverage_file args
+  run_dir="$ROOT/.runs/$project/$run_id"
+  matrix_file="$run_dir/visual-matrix.json"
+  coverage_file="$run_dir/项目覆盖.json"
+  [[ -f "$matrix_file" ]] || fail "visual-matrix.json is missing"
+  [[ -f "$coverage_file" ]] || fail "项目覆盖.json is missing"
+  if [[ "$dry_run" != "true" ]]; then command -v maestro >/dev/null || fail "Maestro is not installed"; fi
+  args=("--matrix=$matrix_file" "--coverage=$coverage_file" "--run-dir=$run_dir")
+  if [[ "$dry_run" == "true" ]]; then args+=(--dry-run); fi
+  node "$ROOT/scripts/run_ios_visual_flows.mjs" "${args[@]}"
+}
+
+visual_check() {
+  local project="" run_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project) [[ $# -ge 2 ]] || fail "--project needs a value"; project="$2"; shift 2 ;;
+      --run-id) [[ $# -ge 2 ]] || fail "--run-id needs a value"; run_id="$2"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) fail "unknown visual-check option: $1" ;;
+    esac
+  done
+  [[ -n "$project" && -n "$run_id" ]] || fail "visual-check requires --project and --run-id"
+  require_slug "project-id" "$project"
+  require_slug "run-id" "$run_id"
+  local run_dir matrix_file result_file
+  run_dir="$ROOT/.runs/$project/$run_id"
+  matrix_file="$run_dir/visual-matrix.json"
+  result_file="$run_dir/result.json"
+  [[ -f "$matrix_file" ]] || fail "visual-matrix.json is missing"
+  [[ -f "$result_file" ]] || fail "result.json is missing"
+  node "$ROOT/scripts/compare_visual_matrix.mjs" \
+    "--matrix=$matrix_file" "--run-dir=$run_dir" "--result=$result_file"
 }
 
 capture() {
@@ -428,11 +521,12 @@ check_run() {
   [[ "$mode" == "mapping" || "$mode" == "ios" || "$mode" == "complete" || "$mode" == "app" ]] || \
     fail "--mode must be mapping, ios, complete, or app"
 
-  local run_dir result_file mapping_file coverage_file ios_evidence web_evidence status source_dir web_dir
+  local run_dir result_file mapping_file coverage_file matrix_file ios_evidence web_evidence status source_dir web_dir
   run_dir="$ROOT/.runs/$project/$run_id"
   result_file="$run_dir/result.json"
   mapping_file="$run_dir/组件映射.md"
   coverage_file="$run_dir/项目覆盖.json"
+  matrix_file="$run_dir/visual-matrix.json"
   [[ -d "$run_dir" ]] || fail "run not found: .runs/$project/$run_id"
   [[ -f "$run_dir/scope.md" ]] || fail "scope.md is missing"
   [[ -f "$result_file" ]] || fail "result.json is missing"
@@ -456,11 +550,14 @@ check_run() {
 
   if [[ "$mode" == "app" ]]; then
     [[ -f "$coverage_file" ]] || fail "项目覆盖.json is missing; start full-project work with ./harness prepare"
+    [[ -f "$matrix_file" ]] || fail "visual-matrix.json is missing; regenerate the full-app run"
     source_dir="$(find_source_dir "$project")" || fail "source project not found under xcode/: $project"
     web_dir="$ROOT/webapps/$project"
     [[ -d "$web_dir" ]] || fail "WebApp not found: webapps/$project"
     node "$ROOT/scripts/check_app_coverage.mjs" \
       "--coverage=$coverage_file" "--source=$source_dir" "--web=$web_dir"
+    node "$ROOT/scripts/check_reconciliation.mjs" \
+      "--coverage=$coverage_file" "--matrix=$matrix_file" "--run-dir=$run_dir"
     node - "$web_dir/package.json" <<'NODE'
 const fs = require('node:fs');
 const packageFile = process.argv[2];
@@ -471,6 +568,8 @@ for (const script of ['build', 'lint', 'test:e2e']) {
 NODE
     (cd "$web_dir" && npm run build && npm run lint && npm run test:e2e)
     node "$ROOT/scripts/check_mobile_shell.mjs" "--web-dir=$web_dir" "--max-width=430"
+    node "$ROOT/scripts/check_visual_matrix.mjs" \
+      "--coverage=$coverage_file" "--matrix=$matrix_file" "--run-dir=$run_dir" "--web=$web_dir"
     status="APP_COMPLETE"
   fi
 
@@ -498,6 +597,7 @@ const [file, status] = process.argv.slice(2);
 const result = JSON.parse(fs.readFileSync(file, 'utf8'));
 const names = fs.readdirSync(path.dirname(file));
 result.status = status;
+if (status === 'APP_COMPLETE') result.reconciliation_status = 'COMPLETE';
 result.checked_at = new Date().toISOString();
 result.evidence = {
   ios: names.filter((name) => /^ios[-_].*\.png$/i.test(name)).sort(),
@@ -519,6 +619,9 @@ if [[ $# -gt 0 ]]; then shift; fi
 case "$command" in
   prepare) prepare_app "$@" ;;
   capture) capture "$@" ;;
+  ios-run) ios_run "$@" ;;
+  reconcile) reconcile "$@" ;;
+  visual-check) visual_check "$@" ;;
   webshot) webshot "$@" ;;
   compare) compare_visuals "$@" ;;
   check) check_run "$@" ;;

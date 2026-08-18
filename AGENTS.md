@@ -1,16 +1,15 @@
 # 所有 AI 工作规则
 
-1. 先读取 `README.md`、`docs/项目技术方案.md`、当前项目的 `项目蓝图.md` 和 `.planning/HANDOFF.md`。
-2. 用户要求迁移整个 App 时，先运行 `./harness prepare --project <project-id>`；用户只要求单功能时，运行 `./harness capture --project <project-id> --feature <feature-id>`。
-3. 全项目任务必须先建立统一手机 App Shell、原生全局导航和全部路由，再逐项迁移；不得先做一批孤立页面后宣称完成。
-4. `prepare` 自动从 iOS `Views` 生成 `项目覆盖.json`。每个源页面必须有 Web 路由、实现文件和行为测试；源页面被 `EXCLUDED` 或 `PENDING` 时，整个 App 不得称为完成。
-5. 编码前用 codebase-memory-mcp 定位页面、子组件、依赖、导航和 Assets。源码与 Assets 决定“应该是什么”，运行截图检查“做出来像不像”。
-6. 三项事实不可改写：用户可见内容与功能、原 Assets/字体/颜色、页面层级与核心交互。React 实现方式可自主选择，不得自行 Web 化重设计。
-7. 全项目只使用一个 `webapps/<project-id>/` 和一个 full-app run；关键视觉状态可继续使用 `capture`、`webshot`、`compare` 精修。
-8. `check --mode complete` 只代表一个功能的证据齐全，状态为 `FEATURE_EVIDENCE_COMPLETE`；只有 `check --mode app` 可以产生 `APP_COMPLETE`。
-9. `check --mode app` 必须同时通过源码覆盖、build、lint、Playwright 和桌面浏览器中的手机容器/全局导航检查。
-10. Pixelmatch 与 SSIM 只帮助定位视觉差异，不代表功能完整，也不设置自动发布阈值。
-11. 不同源 App 分别使用 `xcode/<project-id>/`、`webapps/<project-id>/`、`docs/项目/<project-id>/` 和 `.runs/<project-id>/`。
-12. 文档只维护现有的技术方案、项目清单、项目蓝图、WebApp查看清单和 Handoff；不得增加重复治理文档。
-13. 用户只参与两次：开始时指定范围，结束时查看结果。两轮仍失败或遇到敏感/付费外部条件时再询问。
-14. 不建设自研语义 Analyzer、通用 Runner、复杂 Gate、Schema、数据库或 Agent 平台，不提交密钥、本机配置和生成缓存。
+1. 先读 `README.md`、`docs/项目技术方案.md`、当前项目蓝图和 `.planning/HANDOFF.md`。
+2. 整个 App 使用一个 `webapps/<project-id>/` 和一个 full-app Run；不拼接多个功能项目。
+3. `prepare` 会生成 `项目覆盖.json` 和 `visual-matrix.json`。这两份都是通用机器清单，不得写死某个 App 或功能。
+4. 编码前使用 codebase-memory-mcp 从 App 入口追踪导航目标，并把结果写回 `项目覆盖.json`；脚本扫描、关系图和运行访问三份结果必须对账。
+5. 源码中的条件、弹层和导航分支会进入 `state_candidates`；每项必须映射到视觉状态，或说明为什么不是用户可见状态。
+6. Claude 根据当前 App 生成 Maestro Flow；Maestro 负责真正访问页面、建立状态并截图。Playwright 在 Web 中执行对应状态。
+7. 每个真实可见页面至少要有一个对比状态；空/有数据、登录/未登录等明显不同的状态应分别记录。
+8. iOS 与 Web 必须使用相同数据、页面状态和有效画布。优先用真实 UI 操作建立状态；外部服务不可用时只能用 DEBUG fixture/mock，不得虚构联网成功。
+9. `./harness reconcile` 检查源码、codebase-memory 与 Maestro 是否互相一致；`visual-check` 再运行 Pixelmatch + SSIM。明显结构差异最多精修两轮。
+10. `check --mode app` 必须同时通过三方对账、源码覆盖、build、lint、Playwright、手机外壳、逐页双端截图和视觉报告，否则不得称为 `APP_COMPLETE`。
+11. 约束的是可见事实与验证证据；React 组件划分、CSS、状态管理和实现顺序由 AI 自主决定。
+12. 用户只参与两次：开始指定范围，结束查看结果。两轮仍失败或遇到敏感/付费外部条件时再询问。
+13. 只维护现有技术方案、项目清单、项目蓝图、WebApp查看清单和 Handoff；不增加重复治理文档。

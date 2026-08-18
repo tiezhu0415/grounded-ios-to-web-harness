@@ -24,7 +24,28 @@ const screens = Array.isArray(coverage.screens) ? coverage.screens : [];
 const supportingComponents = Array.isArray(coverage.supporting_components) ? coverage.supporting_components : [];
 const declared = [...screens, ...supportingComponents];
 const declaredById = new Map(declared.map((item) => [item.id, item]));
+const screenIds = new Set(screens.map((item) => item.id));
 const errors = [];
+
+function validateScreen(item, id) {
+  if (item.status !== 'IMPLEMENTED') {
+    errors.push(`screen is not complete: ${id} (${item.status || 'missing status'})`);
+    return;
+  }
+  if (typeof item.web !== 'string' || item.web.length === 0) {
+    errors.push(`completed item has no Web file: ${id}`);
+  } else if (!fs.existsSync(path.join(webDirectory, item.web))) {
+    errors.push(`Web file does not exist for ${id}: ${item.web}`);
+  }
+  if (typeof item.route !== 'string' || !item.route.startsWith('/')) {
+    errors.push(`screen has no Web route: ${id}`);
+  }
+  if (typeof item.test !== 'string' || item.test.length === 0) {
+    errors.push(`screen has no behavior test: ${id}`);
+  } else if (!fs.existsSync(path.join(webDirectory, item.test))) {
+    errors.push(`test file does not exist for ${id}: ${item.test}`);
+  }
+}
 
 for (const sourceItem of discovered) {
   const item = declaredById.get(sourceItem.id);
@@ -35,30 +56,14 @@ for (const sourceItem of discovered) {
   if (item.source_sha256 !== sourceItem.source_sha256) {
     errors.push(`source changed after prepare; regenerate coverage: ${sourceItem.source}`);
   }
-  if (sourceItem.kind === 'screen') {
-    if (item.status !== 'IMPLEMENTED') {
-      errors.push(`screen is not complete: ${sourceItem.id} (${item.status || 'missing status'})`);
-      continue;
-    }
-    if (typeof item.web !== 'string' || item.web.length === 0) {
-      errors.push(`completed item has no Web file: ${sourceItem.id}`);
-    } else if (!fs.existsSync(path.join(webDirectory, item.web))) {
-      errors.push(`Web file does not exist for ${sourceItem.id}: ${item.web}`);
-    }
-    if (typeof item.route !== 'string' || !item.route.startsWith('/')) {
-      errors.push(`screen has no Web route: ${sourceItem.id}`);
-    }
-    if (typeof item.test !== 'string' || item.test.length === 0) {
-      errors.push(`screen has no behavior test: ${sourceItem.id}`);
-    } else if (!fs.existsSync(path.join(webDirectory, item.test))) {
-      errors.push(`test file does not exist for ${sourceItem.id}: ${item.test}`);
-    }
-  }
+  if (screenIds.has(sourceItem.id)) validateScreen(item, sourceItem.id);
 }
 
 const discoveredIds = new Set(discovered.map((item) => item.id));
 for (const item of declared) {
-  if (!discoveredIds.has(item.id)) errors.push(`coverage contains stale source item: ${item.id}`);
+  if (discoveredIds.has(item.id)) continue;
+  if (screenIds.has(item.id) && item.discovery?.graph?.status === 'CONFIRMED') validateScreen(item, item.id);
+  else errors.push(`coverage contains stale or unconfirmed source item: ${item.id}`);
 }
 
 if (errors.length > 0) {
