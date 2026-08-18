@@ -1,14 +1,12 @@
 # Claude Code 入口
 
-先读取 `AGENTS.md`。
+先读取 `AGENTS.md`，迁移任务自动使用 `.claude/skills/ios-web-harness/SKILL.md`。
 
-用户只需说“迁移某项目的某功能”。凡是采集 iOS 证据或迁移 Web 功能，必须自动使用项目 Skill：
-`.claude/skills/ios-web-harness/SKILL.md`。
+- 整个 App：先执行 `./harness prepare --project <project-id>`，先建手机外壳、全局导航和路由，再按 `项目覆盖.json` 实现。
+- 单个功能：执行 `./harness capture --project <project-id> --feature <feature-id>`，用于源码映射、运行证据和视觉精修。
 
-执行必须从下面的命令开始：
+不得把单功能的 `FEATURE_EVIDENCE_COMPLETE` 写成整项目完成。整项目只能在以下命令通过后称为完成：
 
 ```bash
-./harness capture --project <project-id> --feature <feature-id>
+./harness check --project <project-id> --run-id <full-app-run-id> --mode app
 ```
-
-不得要求用户重复说明内部步骤。不得跳过命令、codebase-memory 分析、组件映射、同状态同画布截图、每个映射状态的 Pixelmatch + SSIM 比较和视觉差异精修，也不得仅在聊天中汇报完成。

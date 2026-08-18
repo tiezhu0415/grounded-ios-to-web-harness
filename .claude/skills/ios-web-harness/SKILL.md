@@ -1,90 +1,49 @@
 ---
 name: ios-web-harness
-description: Run this repository's minimal iOS-to-Web workflow for a named project and feature. Use automatically when the user simply asks to migrate, capture, re-shoot, continue, or verify an iOS feature, even if the user does not mention the Harness or this skill. The workflow uses codebase-memory-mcp to build an iOS-to-Web component mapping before implementation, creates a visible run directory, and avoids extra user approval gates.
+description: Migrate or verify either a complete iOS App or one named feature. Full-app work starts from an automatically generated source-view inventory, builds the integrated mobile shell and navigation first, then verifies coverage, behavior, and selected visual states without intermediate user gates.
 ---
 
-# iOS→Web Harness
+# iOS→Web 轻量 Harness
 
-## Start every task
+## 先判断范围
 
-1. Read `AGENTS.md`, `docs/项目技术方案.md`, `docs/项目清单.md`, `docs/项目/<project-id>/项目蓝图.md`, and `.planning/HANDOFF.md`.
-2. Identify one project ID and one lowercase feature ID. Ask only if either cannot be inferred.
-3. From the repository root run:
+读取 `AGENTS.md`、`docs/项目技术方案.md`、当前项目蓝图和 `.planning/HANDOFF.md`。
 
-```bash
-./harness capture --project <project-id> --feature <feature-id>
-```
+- 用户说“整个项目/整个 App”：执行 `./harness prepare --project <project-id>`。
+- 用户只说某个功能：执行 `./harness capture --project <project-id> --feature <feature-id>`。
 
-Use the returned `RUN_DIR` for every artifact. Do not claim the Harness was used if this command did not succeed.
-If the root visual tools are not installed, run `npm install` once in the repository root before comparison.
+用户不需要重复说明 codebase-memory、组件映射、Assets 或禁止重设计等内部规则。
 
-## Build the source mapping
+## 整个 App
 
-1. Use codebase-memory-mcp first: `search_graph` for the page entry, `trace_path` for inbound/outbound relationships, and `get_code_snippet` for the page and every non-framework child component.
-2. Trace View/ViewController → child views → ViewModel/Model/Service → navigation → referenced image, color, and font Assets. Do not infer completeness from filenames alone.
-3. Read the complete selected SwiftUI/UIKit layout and modifiers. Record explicit sizes, spacing, alignment, order, colors, fonts, corner radii, conditions, and gestures in `RUN_DIR/组件映射.md`.
-4. Record every user-visible string/value and its source or observed run state. Do not replace live iOS values with preview, placeholder, or invented data.
-5. Record every referenced Asset, custom font, color token, and SF Symbol. Copy reusable source files into the project WebApp; only recreate a system symbol when no source file exists.
-6. Map every native component to a Web component. Replace the three pending Harness markers with `HARNESS:MAPPING_READY`, `HARNESS:SOURCE_TRUTH_CONFIRMED`, and `HARNESS:ASSETS_CONFIRMED` only after the tables contain source-backed facts.
-7. Run the internal mapping check before writing Web code:
+1. 使用 `prepare` 返回的唯一 full-app run；不要为每个模块创建一套项目或用单功能 Run 宣称整项目完成。
+2. `项目覆盖.json` 来自 iOS `Views` 自动扫描。用 codebase-memory-mcp 补充导航、依赖和业务关系，但不得删除不想实现的源页面。
+3. 编写业务页面前先完成：统一手机 App Shell、原生顶层导航、全部页面路由、共享状态/数据层。
+4. 按覆盖清单逐项实现。只需为源 screen 填写 `IMPLEMENTED`、Web 文件、路由和行为测试；supporting components 只供分析参考，不逐项维护状态。
+5. 外部服务不可用时可以记录真实限制，但该页面保持 `EXCLUDED` 或 `PENDING`，整个 App 仍是未完成。
+6. 为页面和关键按钮编写真实 Playwright 测试；`No tests found` 是失败。
+7. 对关键视觉状态使用下面的单功能视觉流程精修。
+8. 最终执行：
 
 ```bash
-./harness check --project <project-id> --run-id <run-id> --mode mapping
+./harness check --project <project-id> --run-id <full-app-run-id> --mode app
 ```
 
-If codebase-memory-mcp is unavailable or the selected source graph is incomplete, stop and report that blocker. Do not silently replace it with free-form design.
+只有返回 `APP_COMPLETE` 才能向用户报告整个项目完成。
 
-## Capture the running behavior
+## 单功能视觉流程
 
-1. Build and launch the configured source project. Read `harness.yaml` for the current local Xcode settings.
-2. Navigate to the requested feature and save screenshots as `ios-<state>.png` in `RUN_DIR`.
-3. Use runtime observation to confirm navigation, conditional states, scrolling, animation, and system behavior that source alone does not settle.
-4. Use the same product, account state, UI state, visible data, and resource-loading result in iOS and Web evidence. If one side has missing or loaded images while the other does not, fix or recapture the state before comparing. Screenshots are runtime evidence, not the primary source for layout translation.
-5. Save the simulator screenshot directly with `xcrun simctl io booted screenshot RUN_DIR/ios-<state>.png`. Record its pixel size and the simulator scale in the mapping.
-6. For an evidence-only request, finish with:
+1. 用 codebase-memory-mcp 查找入口、所有子组件、ViewModel/Model/Service、导航和 Assets。
+2. 把源码事实写入 run 的 `组件映射.md`，替换三个 pending 标记后执行 `check --mode mapping`。
+3. 运行 iOS 功能，保存与 Web 相同数据、状态、资源结果和画布的 `ios-<state>.png`。
+4. 按源码与 Assets 实现；截图只确认动态状态，不允许凭截图自行重新设计。
+5. 使用 `webshot` 和 `compare` 生成 Pixelmatch + SSIM 报告，按最大差异区域最多精修两轮。
+6. 执行 `check --mode complete`。它只产生 `FEATURE_EVIDENCE_COMPLETE`，不能代表整个 App 完成。
 
-```bash
-./harness check --project <project-id> --run-id <run-id> --mode ios
-```
+## 限制
 
-Then stop and report the evidence path.
-
-## Migrate and verify
-
-For a migration task:
-
-1. Implement only the selected feature in `webapps/<project-id>/`, following the checked `组件映射.md` row by row.
-2. Preserve source-defined hierarchy, navigation, layout direction, component order, sizes, spacing, colors, fonts, Assets, controls, visible data, and behavior. Do not apply a conventional Web redesign.
-3. Run the existing build, lint, and Playwright commands for that WebApp. Functional tests prove behavior only, not visual fidelity.
-4. Declare every acceptance state in the `组件映射.md` “对比状态” table, then capture each state on the same logical canvas and scale:
-
-```bash
-./harness webshot --project <project-id> --run-id <run-id> --state <state> \
-  --url http://localhost:<port>/<route> --width <logical-width> --height <logical-height> --scale <scale>
-```
-
-5. Compare the matching evidence. Crop only simulator/browser system chrome that is not part of the migrated UI, and use identical final dimensions:
-
-```bash
-./harness compare --project <project-id> --run-id <run-id> --state <state> \
-  --ios ios-<state>.png --web web-<state>.png
-```
-
-6. Read `visual-<state>.json` and `visual-<state>-comparison.png`. Treat Pixelmatch `changed_ratio` as the primary location signal and `ssim_score` as an auxiliary structural signal; neither is an automatic release gate. Fix the highest-difference regions locally, recapture, and compare again. Stop after two refinement rounds and report remaining visible differences honestly.
-7. Finish with:
-
-```bash
-./harness check --project <project-id> --run-id <run-id> --mode complete
-```
-
-8. Update only the maintained files required by `AGENTS.md`.
-
-## Limits
-
-- The user chooses the feature at the start and reviews the result at the end; do not add intermediate approval gates.
-- Fix the same failure at most twice, then stop with evidence.
-- Do not invoke Codex review unless the user asks or two repair attempts fail.
-- Do not store passwords, keys, local settings, or credentials in run evidence.
-- Do not build a generic Runner, analyzer, schema system, or agent platform.
-- Do not begin Web implementation before `check --mode mapping` passes.
-- `check --mode complete` must cover every state declared in the mapping table; one comparison cannot stand in for the whole feature.
+- 用户只在开始指定范围、结束查看结果；不增加中间审批。
+- 不虚构登录、支付、Firebase 或 Stripe 成功。
+- 不创建第二份蓝图或新的治理文档。
+- 不建设通用 Runner、语义 Analyzer、复杂 Gate、Schema、数据库或 Agent 平台。
+- 不调用 Codex 审查，除非用户要求或同一问题两轮仍失败。

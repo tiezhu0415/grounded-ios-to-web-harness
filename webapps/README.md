@@ -1,22 +1,9 @@
-# WebApps 目录规则
+# WebApps 目录
 
-本目录保存 Harness 生成的 WebApp。一级目录必须对应一个源 iOS App，不按单次聊天或单个功能复制整套项目。
+一个 iOS App 只对应一个集成 WebApp：
 
 ```text
-webapps/
-├── ecommerce-main/   # 来源：xcode/eCommerce-main
-├── shop-app/         # 来源：xcode/shopApp（示例）
-└── <project-id>/
+webapps/<project-id>/
 ```
 
-## 所有 LLM 必须遵守
-
-1. 新源 App 使用独立目录 `webapps/<project-id>/`；
-2. 每个项目独立维护 `package.json`、源码、构建配置和 Playwright 测试；
-3. 同一源 App 的多个功能保留在同一个项目内，以独立 URL 和测试文件区分；
-4. `harness.yaml` 的 `web.path` 指向当前项目目录；
-5. 完成功能后更新 `docs/WebApp查看清单.md`，每次迁移成果单独一行；
-6. 不得创建新的根目录 `webapp/`，不得把不同源 App 混放在同一项目。
-7. 对应蓝图必须位于 `docs/项目/<project-id>/项目蓝图.md`，并登记到 `docs/项目清单.md`。
-
-当前实验分支已清空 `webapps/ecommerce-main/` 的旧实现。AI完成全项目迁移后，只在该目录生成一套集成 WebApp，并把最终地址写入 `docs/WebApp查看清单.md`。
+同一项目的页面和功能必须共享手机 App Shell、全局导航、数据层和 Playwright 测试，不按功能复制项目。完成后在 `docs/WebApp查看清单.md` 只登记一个最终入口。

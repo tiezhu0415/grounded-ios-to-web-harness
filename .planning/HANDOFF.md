@@ -2,27 +2,19 @@
 
 | 项目 | 当前事实 |
 | --- | --- |
-| 仓库 / 分支 | `iOS-WebApp-Harness-MVP` / `codex/ecommerce-full-migration` |
-| 当前目标 | 从零迁移 `eCommerce-main` 全项目，最终交付一个 WebApp |
-| WebApp | `webapps/ecommerce-main/` 当前不存在，等待 AI 重建 |
-| 安全基线 | 提交 `51bb4e9`；标签 `ecommerce-harness-mvp-baseline-20260817`；原分支 `mvp/ecommerce-product-list` |
-| 保留内容 | Harness、iOS源码目录、项目蓝图和本机旧 `.runs` 证据均未删除；旧 run 仅作备份，不得作为本实验输入 |
-| 验证规则 | 每个模块单独创建 run；源码与 Assets 定事实；运行截图定状态；Pixelmatch + SSIM 检查结果 |
-| 用户参与 | 开始时授权全项目迁移，全部完成后查看一个最终链接；中间不增加审批 |
+| 仓库 / 分支 | `iOS-WebApp-Harness-MVP` / `codex/ecommerce-cleanroom-v2` |
+| iOS 输入 | `xcode/eCommerce-main`，分支 `main`，commit `4863146`，工作树干净 |
+| WebApp | `webapps/ecommerce-main` 不存在；必须从零创建 |
+| Full-app Run | `.runs/ecommerce-main/20260818-cleanroom-full-app` |
+| 旧实验 | 已隔离，不得读取备份分支、旧 Run 或废纸篓中的旧 WebApp |
+| 完成定义 | `./harness check --project ecommerce-main --run-id 20260818-cleanroom-full-app --mode app` 返回 `APP_COMPLETE` |
 
-## 执行顺序
+## 下一位 AI
 
-1. 读取 `AGENTS.md`、`docs/项目技术方案.md` 和项目蓝图；
-2. 按认证、首页、商店、收藏、购物车、订单/个人资料逐模块执行；
-3. 每个模块先运行 `./harness capture`，完成映射和源端证据后再写 Web；
-4. 所有模块集成到同一个 `webapps/ecommerce-main/`，不得为每个功能创建独立 WebApp；
-5. 每个映射状态执行视觉比较，同一问题最多精修两轮；
-6. 最后统一运行 build、lint、Playwright并更新现有四份精简文档。
+1. 先读 `AGENTS.md`、`CLAUDE.md`、`.claude/skills/ios-web-harness/SKILL.md` 和 full-app Run 中的 `项目覆盖.json`；
+2. 用 codebase-memory-mcp 确认页面、导航、依赖和 Assets；
+3. 从零创建一个统一的手机 WebApp，不拼接旧功能项目；
+4. 按 `项目覆盖.json` 逐页补齐实现、路由和 Playwright 行为测试；
+5. 未通过 `check --mode app` 时只能报告未完成。
 
-## 限制
-
-- 不读取或复制标签中的旧 WebApp 实现；本实验验证从零迁移效果；
-- 不复用旧 `.runs` 的组件映射或 Web 证据；每个模块必须创建新 run；
-- 不虚构 Firebase、Stripe或其他外部服务成功；
-- 不推送远程、不调用 Codex、不增加复杂 Gate或新治理文档；
-- 全部完成前不要求用户逐模块审批。
+不推送远程，不增加治理文档，不调用 Codex，不虚构 Firebase、Stripe 或支付成功。
