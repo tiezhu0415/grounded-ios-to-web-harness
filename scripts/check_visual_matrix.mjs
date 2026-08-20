@@ -45,14 +45,22 @@ export function validateVisualMatrix({ coverage, matrix, runDirectory, webDirect
   const expectedIds = new Set(coverageScreens.map((screen) => screen.id));
   const seenStates = new Set();
   const seenFiles = new Set();
+  const representativeScreens = matrixScreens.filter((screen) => screen.representative === true);
   const maxChangedRatio = Number(matrix.quality_policy?.max_changed_ratio);
   const minSsimScore = Number(matrix.quality_policy?.min_ssim_score);
+  const minimumRepresentativeScreens = Number(matrix.quality_policy?.minimum_representative_screens);
 
   if (!Number.isFinite(maxChangedRatio) || maxChangedRatio <= 0 || maxChangedRatio > 0.25) {
     errors.push('quality_policy.max_changed_ratio must be greater than 0 and no looser than 0.25');
   }
   if (!Number.isFinite(minSsimScore) || minSsimScore < 0.65 || minSsimScore > 1) {
     errors.push('quality_policy.min_ssim_score must be between 0.65 and 1');
+  }
+  const expectedMinimum = Math.min(3, coverageScreens.length);
+  if (!Number.isInteger(minimumRepresentativeScreens) || minimumRepresentativeScreens < expectedMinimum) {
+    errors.push(`quality_policy.minimum_representative_screens must be at least ${expectedMinimum}`);
+  } else if (representativeScreens.length < minimumRepresentativeScreens) {
+    errors.push(`select at least ${minimumRepresentativeScreens} representative screens; found ${representativeScreens.length}`);
   }
 
   for (const source of coverageScreens) {
@@ -62,9 +70,13 @@ export function validateVisualMatrix({ coverage, matrix, runDirectory, webDirect
       continue;
     }
     if (screen.route !== source.route) errors.push(`visual route does not match coverage for ${source.id}`);
-    const states = Array.isArray(screen.states) ? screen.states.filter((state) => state.required !== false) : [];
+    const states = Array.isArray(screen.states) ? screen.states.filter((state) => state.required === true) : [];
+    if (screen.representative !== true) {
+      if (states.length > 0) errors.push(`non-representative screen has required visual states: ${source.id}`);
+      continue;
+    }
     if (states.length === 0) {
-      errors.push(`screen has no required visual state: ${source.id}`);
+      errors.push(`representative screen has no required visual state: ${source.id}`);
       continue;
     }
     for (const state of states) {
@@ -120,7 +132,7 @@ export function validateVisualMatrix({ coverage, matrix, runDirectory, webDirect
   for (const screen of matrixScreens) {
     if (!expectedIds.has(screen.source_id)) errors.push(`visual matrix contains stale source screen: ${screen.source_id}`);
   }
-  return { errors, screens: coverageScreens.length, states: seenStates.size };
+  return { errors, screens: coverageScreens.length, representativeScreens: representativeScreens.length, states: seenStates.size };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -140,5 +152,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.stderr.write(`APP VISUAL COVERAGE INCOMPLETE\n${result.errors.map((error) => `- ${error}`).join('\n')}\n`);
     process.exit(1);
   }
-  process.stdout.write(`APP VISUAL COVERAGE PASSED\nSCREENS=${result.screens}\nSTATES=${result.states}\n`);
+  process.stdout.write(`APP VISUAL COVERAGE PASSED\nSCREENS=${result.screens}\nREPRESENTATIVE_SCREENS=${result.representativeScreens}\nSTATES=${result.states}\n`);
 }

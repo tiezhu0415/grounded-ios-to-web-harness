@@ -2,14 +2,14 @@
 
 1. 先读 `README.md`、`docs/项目技术方案.md`、当前项目蓝图和 `.planning/HANDOFF.md`。
 2. 整个 App 使用一个 `webapps/<project-id>/` 和一个 full-app Run；不拼接多个功能项目。
-3. `prepare` 会生成 `项目覆盖.json` 和 `visual-matrix.json`。这两份都是通用机器清单，不得写死某个 App 或功能。
-4. 编码前使用 codebase-memory-mcp 从 App 入口追踪导航目标，并把结果写回 `项目覆盖.json`；脚本扫描、关系图和运行访问三份结果必须对账。
-5. 源码中的条件、弹层和导航分支会进入 `state_candidates`；每项必须映射到视觉状态，或说明为什么不是用户可见状态。
-6. Claude 根据当前 App 生成 Maestro Flow；Maestro 负责真正访问页面、建立状态并截图。Playwright 在 Web 中执行对应状态。
-7. 每个真实可见页面至少要有一个对比状态；空/有数据、登录/未登录等明显不同的状态应分别记录。
-8. iOS 与 Web 必须使用相同数据、页面状态和有效画布。优先用真实 UI 操作建立状态；外部服务不可用时只能用 DEBUG fixture/mock，不得虚构联网成功。
-9. `./harness reconcile` 检查源码、codebase-memory 与 Maestro 是否互相一致；`visual-check` 再运行 Pixelmatch + SSIM。明显结构差异最多精修两轮。
-10. `check --mode app` 必须同时通过三方对账、源码覆盖、build、lint、Playwright、手机外壳、逐页双端截图和视觉报告，否则不得称为 `APP_COMPLETE`。
-11. 约束的是可见事实与验证证据；React 组件划分、CSS、状态管理和实现顺序由 AI 自主决定。
-12. 用户只参与两次：开始指定范围，结束查看结果。两轮仍失败或遇到敏感/付费外部条件时再询问。
-13. 只维护现有技术方案、项目清单、项目蓝图、WebApp查看清单和 Handoff；不增加重复治理文档。
+3. `prepare` 只建立通用覆盖、行为旅程和代表视觉清单，不要求编码前完成全部截图。
+4. Claude 先用源码、Assets 和 codebase-memory 理解 App，自主完成一个连贯、真实可操作的 WebApp；Harness 不规定 React 架构、实现顺序或 CSS 写法。
+5. 第一版可运行后再对账：源码页面、关系图目标和 Web 路由必须一致。遗漏页面只补缺口，不推翻整体实现。
+6. Playwright 必须验证少量核心“操作→结果”旅程，并至少覆盖一个跨页面状态流；只 `goto`、查文字或截图不算行为测试。
+7. Maestro 和 Pixelmatch + SSIM 只用于代表页面和关键状态精修，不再要求每个页面先截图才能编码。
+8. 禁止把 iOS 运行截图作为 Web 页面、背景或遮罩；禁止用不可见 DOM 文案冒充功能。iOS 源 Assets 可以直接复用。
+9. iOS 与 Web 的核心旅程和代表视觉状态使用相同确定数据。外部服务不可用时只能使用明确的 DEBUG fixture/mock，不得虚构联网成功。
+10. 行为和视觉问题最多修复两轮；之后停止并向用户报告剩余差异。不得自动调用 Codex 形成 review—修复循环。
+11. `APP_COMPLETE` 必须同时通过页面覆盖、build、lint、Playwright、手机外壳、实现真实性、核心行为、代表视觉，并提供验证链接。
+12. 用户只参与两次：开始指定迁移范围，结束打开链接决定继续、调整或停止。
+13. 只维护现有技术方案、项目清单、项目蓝图、WebApp 查看清单和 Handoff；不增加重复治理文档。

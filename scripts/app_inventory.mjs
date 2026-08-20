@@ -57,6 +57,7 @@ export function discoverStateCandidates(sourceDirectory) {
         status: 'PENDING',
         screen_ids: [],
         state_ids: [],
+        journey_ids: [],
         note: '',
       });
     }
@@ -122,8 +123,8 @@ export function createCoverage(project, sourceDirectory) {
     project,
     generated_at: new Date().toISOString(),
     source: sourceDirectory,
-    completion_rule: 'Every source screen must be IMPLEMENTED with a Web route and behavior test. EXCLUDED and PENDING keep the app incomplete.',
-    reconciliation_policy: 'Source declarations, codebase-memory navigation targets, source UI-state branches, and Maestro runtime visits must agree before APP_COMPLETE.',
+    completion_rule: 'Every source screen must be reconciled to an implemented Web route. Core behavior is verified by cross-screen journeys; visual refinement uses representative states.',
+    reconciliation_policy: 'Source declarations and codebase-memory navigation targets define page coverage. Runtime evidence is required for core journeys and representative visual states, not every implementation detail.',
     graph_discovery: {
       status: 'PENDING',
       entry_points: [],

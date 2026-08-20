@@ -13,27 +13,25 @@
 Harness 内部流程：
 
 ```text
-扫描源码页面和状态分支
-→ codebase-memory 从 App 入口追踪导航页面
-→ Claude 生成当前 App 的 Maestro Flow
-→ Maestro 逐页点击 iOS 并截图
-→ 三方对账：源码、关系图、实际访问不能有遗漏
-→ Claude 实现 WebApp
-→ Playwright 执行同样状态并截图
-→ Pixelmatch + SSIM 逐页对比和精修
+源码、Assets 和 codebase-memory 帮助 Claude 理解 App
+→ Claude 自主完成第一版完整、可操作 WebApp
+→ 源码页面、关系图和 Web 路由对账，补遗漏
+→ Playwright 验证少量核心“操作→结果”旅程
+→ Maestro + Pixelmatch + SSIM 精修代表页面
+→ 最多两轮修复后停止
 → 用户打开链接验收
 ```
 
-Harness 不写死业务功能。Claude 负责理解每个 App，Maestro、Playwright 和视觉比较器负责可重复执行与留证。
+Harness 不写死业务功能，也不规定 Claude 怎么组织 React。它只防止漏页面、静态截图伪实现、没有真实交互却宣称完成。
 
 ## 当前 ecommerce-main
 
 | 项目 | 状态 |
 | --- | --- |
 | 旧实验 | 已移出仓库，不作为新迁移输入 |
-| 新 WebApp | 尚未生成 |
-| 新 full-app Run | 尚未创建 |
-| 最终状态 | `NOT_STARTED` |
+| 当前实验 WebApp | 已生成，但使用 iOS 截图背景，属于失败样本，不是交付结果 |
+| 当前 full-app Run | 已证明旧视觉优先规则可能产生假阳性 |
+| 最终状态 | `NEEDS_RERUN_WITH_CLAUDE_FIRST_FLOW` |
 
 ## 只看这些
 

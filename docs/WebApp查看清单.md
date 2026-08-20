@@ -2,6 +2,6 @@
 
 | 项目 | 已实现功能 | 验证链接 | 如何启动 | 状态 |
 | --- | --- | --- | --- | --- |
-| [eCommerce-main](项目/ecommerce-main/项目蓝图.md) | 等待本次全项目重新生成 | 完成后填写 | `cd webapps/ecommerce-main && npm install && npm run dev` | 未开始 |
+| [eCommerce-main](项目/ecommerce-main/项目蓝图.md) | 尚无通过新 Harness 的完整交付 | 通过后填写 | `cd webapps/ecommerce-main && npm install && npm run dev` | 当前目录是静态视觉失败样本，不可验收 |
 
-这里只记录实际可打开的 WebApp，未验证前不提前填写链接或功能。
+这里只登记通过页面覆盖、核心行为和代表视觉验收的真实 WebApp。静态截图 Demo 即使能打开，也不登记为完成链接。

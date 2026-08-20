@@ -30,7 +30,9 @@ function writePng(file) {
 function materialize(directory, matrix, changedReport = false) {
   const web = path.join(directory, 'webapp');
   for (const screen of matrix.screens) {
+    screen.representative = true;
     for (const state of screen.states) {
+      state.required = true;
       for (const relative of [state.ios_flow, state.ios_screenshot, state.web_screenshot, state.report]) {
         fs.mkdirSync(path.dirname(path.join(directory, relative)), { recursive: true });
       }
@@ -65,15 +67,21 @@ test('visual matrix is generated from arbitrary source screens without project-s
   assert.equal(matrix.screens.length, 2);
   assert.equal(matrix.screens[0].states[0].id, 'welcome-view-default');
   assert.equal(matrix.screens[1].states[0].id, 'items-view-default');
+  assert.equal(matrix.screens[0].representative, false);
+  assert.equal(matrix.screens[0].states[0].required, false);
   assert.doesNotMatch(JSON.stringify(matrix), /cart|favorite|ecommerce/i);
 });
 
-test('visual coverage requires a distinct iOS flow, matched screenshots, report, and Web test for every screen', () => {
+test('visual coverage requires evidence for selected representative screens', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-visual-matrix-'));
   const coverageFile = path.join(directory, 'coverage.json');
   const matrixFile = path.join(directory, 'visual-matrix.json');
   const sourceCoverage = coverage();
   const matrix = createVisualMatrix(sourceCoverage);
+  for (const screen of matrix.screens) {
+    screen.representative = true;
+    screen.states[0].required = true;
+  }
   fs.writeFileSync(coverageFile, JSON.stringify(sourceCoverage));
   fs.writeFileSync(matrixFile, JSON.stringify(matrix));
   const missing = runCheck(directory, path.join(directory, 'webapp'), coverageFile, matrixFile);
@@ -110,6 +118,8 @@ test('batch comparison fills the generic matrix and result without business-spec
   const resultFile = path.join(directory, 'result.json');
   const matrix = createVisualMatrix({ project: 'demo', screens: [coverage().screens[0]] });
   const state = matrix.screens[0].states[0];
+  matrix.screens[0].representative = true;
+  state.required = true;
   writePng(path.join(directory, state.ios_screenshot));
   writePng(path.join(directory, state.web_screenshot));
   fs.writeFileSync(matrixFile, JSON.stringify(matrix));
@@ -133,7 +143,9 @@ test('iOS flow runner derives all clicks from the project matrix', () => {
   const matrixFile = path.join(directory, 'visual-matrix.json');
   const coverageFile = path.join(directory, 'coverage.json');
   for (const screen of matrix.screens) {
+    screen.representative = true;
     for (const state of screen.states) {
+      state.required = true;
       const flow = path.join(directory, state.ios_flow);
       fs.mkdirSync(path.dirname(flow), { recursive: true });
       fs.writeFileSync(flow, 'appId: example.app\n---\n- launchApp\n');

@@ -22,12 +22,16 @@ function fixture(withStateBranch = false) {
   matrix.screens[0].route = '/welcome';
   const coverageFile = path.join(directory, 'coverage.json');
   const matrixFile = path.join(directory, 'visual-matrix.json');
-  return { directory, coverage, matrix, coverageFile, matrixFile };
+  const journeysFile = path.join(directory, 'behavior-journeys.json');
+  const journeys = { journeys: [] };
+  return { directory, coverage, matrix, journeys, coverageFile, matrixFile, journeysFile };
 }
 
 function completeReconciliation(coverage, matrix) {
   const screen = coverage.screens[0];
   const state = matrix.screens[0].states[0];
+  matrix.screens[0].representative = true;
+  state.required = true;
   coverage.graph_discovery = {
     status: 'COMPLETE',
     entry_points: [screen.id],
@@ -55,28 +59,29 @@ function completeReconciliation(coverage, matrix) {
 function runCheck(fixtureValue) {
   fs.writeFileSync(fixtureValue.coverageFile, JSON.stringify(fixtureValue.coverage));
   fs.writeFileSync(fixtureValue.matrixFile, JSON.stringify(fixtureValue.matrix));
+  fs.writeFileSync(fixtureValue.journeysFile, JSON.stringify(fixtureValue.journeys));
   return spawnSync('node', [
     path.join(root, 'scripts/check_reconciliation.mjs'),
     `--coverage=${fixtureValue.coverageFile}`,
     `--matrix=${fixtureValue.matrixFile}`,
+    `--journeys=${fixtureValue.journeysFile}`,
     `--run-dir=${fixtureValue.directory}`,
   ], { encoding: 'utf8' });
 }
 
-test('three-way reconciliation fails when graph or runtime evidence is missing', () => {
+test('reconciliation fails when code graph evidence is missing', () => {
   const value = fixture();
   const result = runCheck(value);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /codebase-memory/);
-  assert.match(result.stderr, /Maestro/);
 });
 
-test('three-way reconciliation passes when source, graph, and runtime agree', () => {
+test('reconciliation passes when source, graph, and representative runtime evidence agree', () => {
   const value = fixture();
   completeReconciliation(value.coverage, value.matrix);
   const result = runCheck(value);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /THREE-WAY RECONCILIATION PASSED/);
+  assert.match(result.stdout, /COVERAGE RECONCILIATION PASSED/);
 });
 
 test('source UI-state candidates must be mapped or explicitly dismissed', () => {
@@ -101,4 +106,15 @@ test('a graph-discovered navigation target outside screen coverage is rejected',
   const result = runCheck(value);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /missing from screen coverage/);
+});
+
+test('a source state can be covered by a core behavior journey instead of a visual state', () => {
+  const value = fixture(true);
+  completeReconciliation(value.coverage, value.matrix);
+  value.journeys.journeys = [{ id: 'empty-to-full' }];
+  value.coverage.state_candidates[0].status = 'BEHAVIOR_COVERED';
+  value.coverage.state_candidates[0].state_ids = [];
+  value.coverage.state_candidates[0].journey_ids = ['empty-to-full'];
+  const result = runCheck(value);
+  assert.equal(result.status, 0, result.stderr);
 });

@@ -23,16 +23,18 @@ export function slugify(value) {
 
 export function createVisualMatrix(coverage) {
   const screens = Array.isArray(coverage.screens) ? coverage.screens : [];
+  const minimumRepresentativeScreens = Math.min(3, screens.length);
   return {
-    version: 1,
+    version: 2,
     project: coverage.project,
     generated_at: new Date().toISOString(),
-    completion_rule: 'Every source screen needs at least one matched iOS/Web state, a repeatable iOS flow, a Web behavior test, and an acceptable Pixelmatch + SSIM report.',
+    completion_rule: 'After the WebApp works, select representative screens for iOS/Web visual refinement. Visual similarity does not prove page coverage or behavior.',
     quality_policy: {
       max_changed_ratio: 0.25,
       min_ssim_score: 0.65,
+      minimum_representative_screens: minimumRepresentativeScreens,
       refinement_round_limit: 2,
-      note: 'These broad limits catch structural redesigns. The user performs the final visual acceptance.',
+      note: 'Choose the shell plus visually important screens. These broad limits catch structural redesigns; the user performs final acceptance.',
     },
     screens: screens.map((screen) => {
       const stateId = `${slugify(screen.declaration)}-default`;
@@ -41,11 +43,12 @@ export function createVisualMatrix(coverage) {
         declaration: screen.declaration,
         role: 'page',
         route: screen.route || '',
+        representative: false,
         states: [
           {
             id: stateId,
             label: 'Default meaningful state; replace or add states after source/runtime analysis.',
-            required: true,
+            required: false,
             ios_flow: `flows/ios/${stateId}.yaml`,
             ios_screenshot: `ios/${stateId}.png`,
             web_test: `tests/e2e/visual.spec.ts#${stateId}`,

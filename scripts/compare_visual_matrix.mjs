@@ -45,8 +45,9 @@ const comparisons = [];
 const failures = [];
 
 for (const screen of matrix.screens || []) {
+  if (screen.representative !== true) continue;
   for (const state of screen.states || []) {
-    if (state.required === false) continue;
+    if (state.required !== true) continue;
     const label = `${screen.declaration}/${state.id}`;
     const ios = safePath(runDirectory, state.ios_screenshot, `${label} iOS screenshot`);
     const web = safePath(runDirectory, state.web_screenshot, `${label} Web screenshot`);

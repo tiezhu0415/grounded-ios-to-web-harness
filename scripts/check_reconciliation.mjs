@@ -8,12 +8,13 @@ const options = Object.fromEntries(process.argv.slice(2).map((argument) => {
   if (separator === -1) throw new Error(`invalid argument: ${argument}`);
   return [argument.slice(0, separator).replace(/^--/, ''), argument.slice(separator + 1)];
 }));
-for (const required of ['coverage', 'matrix', 'run-dir']) {
+for (const required of ['coverage', 'matrix', 'journeys', 'run-dir']) {
   if (!options[required]) throw new Error(`missing --${required}`);
 }
 
 const coverage = JSON.parse(fs.readFileSync(path.resolve(options.coverage), 'utf8'));
 const matrix = JSON.parse(fs.readFileSync(path.resolve(options.matrix), 'utf8'));
+const journeys = JSON.parse(fs.readFileSync(path.resolve(options.journeys), 'utf8'));
 const runDirectory = path.resolve(options['run-dir']);
 if (!fs.existsSync(runDirectory) || !fs.statSync(runDirectory).isDirectory()) throw new Error('run directory does not exist');
 const errors = [];
@@ -22,6 +23,7 @@ const screenIds = new Set(screens.map((screen) => screen.id));
 const matrixScreens = new Map((matrix.screens || []).map((screen) => [screen.source_id, screen]));
 const stateIds = new Set((matrix.screens || []).flatMap((screen) => (screen.states || []).map((state) => state.id)));
 const candidates = new Map((coverage.state_candidates || []).map((candidate) => [candidate.id, candidate]));
+const journeyIds = new Set((journeys.journeys || []).map((journey) => journey.id));
 
 if (coverage.graph_discovery?.status !== 'COMPLETE') errors.push('codebase-memory graph discovery is not COMPLETE');
 if (!Array.isArray(coverage.graph_discovery?.entry_points) || coverage.graph_discovery.entry_points.length === 0) {
@@ -48,20 +50,24 @@ for (const screen of screens) {
     errors.push(`${label} has no codebase-memory navigation evidence`);
   }
   if (!graphTargetIds.has(screen.id)) errors.push(`${label} is absent from graph_discovery.targets`);
-  if (screen.discovery?.runtime?.status !== 'VISITED') errors.push(`${label} was not visited by Maestro`);
   const flows = Array.isArray(screen.discovery?.runtime?.flow_state_ids) ? screen.discovery.runtime.flow_state_ids : [];
-  if (flows.length === 0) errors.push(`${label} has no runtime state flow`);
   for (const stateId of flows) if (!stateIds.has(stateId)) errors.push(`${label} references unknown runtime state: ${stateId}`);
   if (!matrixScreens.has(screen.id)) errors.push(`${label} is missing from visual-matrix.json`);
 }
 
 for (const candidate of candidates.values()) {
   const label = `${candidate.source}:${candidate.line}`;
-  if (!['MAPPED', 'NOT_USER_VISIBLE'].includes(candidate.status)) {
+  if (!['MAPPED', 'BEHAVIOR_COVERED', 'NOT_USER_VISIBLE'].includes(candidate.status)) {
     errors.push(`source state candidate is unresolved: ${label} (${candidate.expression})`);
     continue;
   }
   if (candidate.status === 'NOT_USER_VISIBLE' && !candidate.note) errors.push(`non-visible state candidate needs a reason: ${label}`);
+  if (candidate.status === 'BEHAVIOR_COVERED') {
+    if (!Array.isArray(candidate.journey_ids) || candidate.journey_ids.length === 0) {
+      errors.push(`behavior-covered state candidate has no journey: ${label}`);
+    }
+    for (const id of candidate.journey_ids || []) if (!journeyIds.has(id)) errors.push(`state candidate references unknown journey: ${id}`);
+  }
   if (candidate.status === 'MAPPED') {
     if (!Array.isArray(candidate.screen_ids) || candidate.screen_ids.length === 0) errors.push(`mapped state candidate has no screen: ${label}`);
     if (!Array.isArray(candidate.state_ids) || candidate.state_ids.length === 0) errors.push(`mapped state candidate has no visual state: ${label}`);
@@ -71,7 +77,8 @@ for (const candidate of candidates.values()) {
 }
 
 for (const screen of matrix.screens || []) {
-  for (const state of (screen.states || []).filter((item) => item.required !== false)) {
+  if (screen.representative !== true) continue;
+  for (const state of (screen.states || []).filter((item) => item.required === true)) {
     const label = `${screen.declaration}/${state.id}`;
     if (!Array.isArray(state.discovered_by) || !state.discovered_by.includes('source') || !state.discovered_by.includes('runtime')) {
       errors.push(`${label} must be discovered by both source and runtime`);
@@ -87,7 +94,7 @@ for (const screen of matrix.screens || []) {
 }
 
 if (errors.length > 0) {
-  process.stderr.write(`THREE-WAY RECONCILIATION INCOMPLETE\n${errors.map((error) => `- ${error}`).join('\n')}\n`);
+  process.stderr.write(`COVERAGE RECONCILIATION INCOMPLETE\n${errors.map((error) => `- ${error}`).join('\n')}\n`);
   process.exit(1);
 }
-process.stdout.write(`THREE-WAY RECONCILIATION PASSED\nSCREENS=${screens.length}\nSTATE_CANDIDATES=${candidates.size}\nVISUAL_STATES=${stateIds.size}\n`);
+process.stdout.write(`COVERAGE RECONCILIATION PASSED\nSCREENS=${screens.length}\nSTATE_CANDIDATES=${candidates.size}\nVISUAL_STATES=${stateIds.size}\n`);

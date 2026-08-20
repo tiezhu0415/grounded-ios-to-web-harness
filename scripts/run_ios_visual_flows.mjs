@@ -37,14 +37,15 @@ const matrix = JSON.parse(fs.readFileSync(matrixFile, 'utf8'));
 const coverage = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
 const flows = [];
 for (const screen of matrix.screens || []) {
+  if (screen.representative !== true) continue;
   for (const state of screen.states || []) {
-    if (state.required === false) continue;
+    if (state.required !== true) continue;
     const flow = safePath(runDirectory, state.ios_flow);
     if (!fs.existsSync(flow)) throw new Error(`iOS flow does not exist for ${state.id}: ${state.ios_flow}`);
     flows.push({ sourceId: screen.source_id, state, flow });
   }
 }
-if (flows.length === 0) throw new Error('visual matrix contains no required iOS flows');
+if (flows.length === 0) throw new Error('visual matrix contains no representative iOS flows');
 
 for (const item of flows) {
   process.stdout.write(`${options.dryRun ? 'WOULD RUN' : 'RUNNING'} IOS FLOW state=${item.state.id} file=${path.relative(runDirectory, item.flow)}\n`);
