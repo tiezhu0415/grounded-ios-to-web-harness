@@ -29,9 +29,9 @@ Harness 不写死业务功能，也不规定 Claude 怎么组织 React。它只�
 | 项目 | 状态 |
 | --- | --- |
 | 旧实验 | 已移出仓库，不作为新迁移输入 |
-| 当前实验 WebApp | 已生成，但使用 iOS 截图背景，属于失败样本，不是交付结果 |
-| 当前 full-app Run | 已证明旧视觉优先规则可能产生假阳性 |
-| 最终状态 | `NEEDS_RERUN_WITH_CLAUDE_FIRST_FLOW` |
+| 当前 WebApp | 尚未生成；等待 Claude 从零实现 |
+| 当前 full-app Run | `20260820-103708-full-app` |
+| 最终状态 | `BUILD_PENDING` |
 
 ## 只看这些
 

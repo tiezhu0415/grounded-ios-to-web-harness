@@ -3,25 +3,20 @@
 | 项目 | 当前事实 |
 | --- | --- |
 | 仓库 / 分支 | `iOS-WebApp-Harness-MVP` / `codex/ecommerce-cleanroom-v2` |
-| Harness 基线 | `36c9645` 之后正在改为 Claude 主导、事后轻量验收 |
+| 新 Harness commit | `c8748c7` — Claude 主导、事后轻量验收 |
 | iOS 输入 | `xcode/eCommerce-main`，分支 `main`，commit `4863146` |
-| 当前 WebApp | `webapps/ecommerce-main` 是未提交的静态视觉失败样本，不是交付结果 |
-| 失败 Run | `.runs/ecommerce-main/20260818-145908-full-app`；旧规则错误返回过 `APP_COMPLETE` |
-| 当前完成状态 | `NEEDS_RERUN_WITH_CLAUDE_FIRST_FLOW` |
+| WebApp | 当前不存在；必须从零建立 `webapps/ecommerce-main` |
+| Full-app Run | `.runs/ecommerce-main/20260820-103708-full-app` |
+| 当前状态 | `BUILD_PENDING` |
+| 旧实验 | 已移出仓库，不得作为实现输入 |
 
-## 已修正的 Harness
+## 本轮执行顺序
 
-- Claude 先自主完成一个真实、连贯 WebApp；不再要求编码前逐页截图。
-- 页面覆盖在第一版之后通过源码、codebase-memory 和 Web 路由对账。
-- `behavior-journeys.json` 要求真实“操作→结果”和至少一个跨路由旅程。
-- `visual-matrix.json` 只选择代表页面精修，不再逐页视觉阻断。
-- 禁止 iOS 运行截图背景和不可见 DOM 伪实现。
-- 行为或视觉最多修复两轮；不自动调用 Codex。
-
-## 下一位 AI
-
-1. 不要把当前静态失败样本描述为完成，也不要复用其中的 iOS 页面背景。
-2. 在用户批准重跑后，先归档或清空当前 `webapps/ecommerce-main` 与失败 Run，再创建新 full-app Run。
-3. 用源码、Assets 和 codebase-memory 理解 App，然后自主完成第一版真实 React WebApp。
-4. 第一版可运行后再完成页面对账、核心行为旅程和三个以上代表页面视觉精修。
-5. 最多修复两轮，运行 `check --mode app`，并在 `docs/WebApp查看清单.md` 填写实际验证链接。
+1. 读取源码、Assets、项目蓝图和新 Run；使用 codebase-memory 从 App 入口追踪页面、导航和依赖。
+2. Claude 自主完成一个统一、真实可操作的 React WebApp。先形成完整整体，不要在编码前逐页截图。
+3. 第一版可运行后，补全 `项目覆盖.json`，运行页面与路由对账。
+4. 在 `behavior-journeys.json` 写入核心“操作→结果”旅程，至少一个跨路由，并用 Playwright 实际执行。
+5. 选择至少三个代表页面，再使用 Maestro、Pixelmatch + SSIM 精修视觉。
+6. 行为或视觉最多修复两轮，不降低检查、不使用 iOS 运行截图背景、不调用 Codex 循环。
+7. 运行 `./harness check --project ecommerce-main --run-id 20260820-103708-full-app --mode app`。
+8. 只有返回 `APP_COMPLETE` 后，更新项目蓝图、项目清单、WebApp 查看清单和本 Handoff，并给用户验证链接。
