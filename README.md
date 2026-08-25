@@ -28,7 +28,7 @@ Claude 不再把整仓库资料一次塞进上下文：`context` 会按 Screen �
 | `USER_ACCEPTED` | 用户实际打开并接受结果 |
 | `NEEDS_REVISION` | 仍有事实、页面、行为或视觉缺口 |
 
-当前 ecommerce-main 候选是上一轮 SIMPLIFY v2 证据，状态仍为 `NEEDS_REVISION`；它不代表新增“生成前视觉依据 + 事实切片”流程已经完成真实项目验证。新流程需用 fresh Run 重跑后再判断效果。
+旧 ecommerce-main 实验已经移出当前工作区并安全归档。当前状态是 `WAITING_FRESH_RUN`：下一次迁移将从空 WebApp 和空 Run 开始，用于验证“生成前视觉依据 + 每屏事实切片”是否真正改善 Claude 首版质量。
 
 - [技术方案](docs/项目技术方案.md)
 - [项目与功能清单](docs/项目清单.md)
