@@ -30,7 +30,8 @@ function fixture(withStateBranch = false) {
 function completeReconciliation(coverage, matrix) {
   const screen = coverage.screens[0];
   const state = matrix.screens[0].states[0];
-  matrix.screens[0].representative = true;
+  matrix.screens[0].critical = true;
+  matrix.screens[0].selection_reason = 'CORE_FLOW';
   state.required = true;
   coverage.graph_discovery = {
     status: 'COMPLETE',
@@ -53,6 +54,7 @@ function completeReconciliation(coverage, matrix) {
     candidate.status = 'MAPPED';
     candidate.screen_ids = [screen.id];
     candidate.state_ids = [state.id];
+    state.source_evidence.push(candidate.id);
   }
 }
 

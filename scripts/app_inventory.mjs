@@ -29,6 +29,14 @@ function withoutDebugBlocks(source) {
   return source.replace(/#if\s+DEBUG[\s\S]*?#endif/g, (block) => block.replace(/[^\n]/g, ' '));
 }
 
+function slugify(value) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+}
+
 export function discoverStateCandidates(sourceDirectory) {
   const candidates = [];
   const files = walk(sourceDirectory)
@@ -105,6 +113,21 @@ export function discoverIosViews(sourceDirectory) {
         route: '',
         test: '',
         note: '',
+        states: isScreen ? [
+          {
+            id: `${slugify(declaration)}-default`,
+            label: 'Default meaningful state; refine after source, graph, and runtime discovery.',
+            source_evidence: [`ALWAYS_VISIBLE:${relativePath}#${declaration}`],
+            confidence: 'SUPPORTED',
+            status: 'PENDING',
+            web_route: '',
+            render_test: '',
+            render_status: 'PENDING',
+            behavior_journey_ids: [],
+            visual_state_ids: [],
+            note: '',
+          },
+        ] : undefined,
         discovery: {
           source: { status: 'FOUND', evidence: `${relativePath}#${declaration}` },
           graph: { status: 'PENDING', navigation_entry: '', evidence: [], inbound: [], outbound: [] },
@@ -120,11 +143,12 @@ export function discoverIosViews(sourceDirectory) {
 export function createCoverage(project, sourceDirectory) {
   const discovered = discoverIosViews(sourceDirectory);
   return {
+    version: 3,
     project,
     generated_at: new Date().toISOString(),
     source: sourceDirectory,
-    completion_rule: 'Every source screen must be reconciled to an implemented Web route. Core behavior is verified by cross-screen journeys; visual refinement uses representative states.',
-    reconciliation_policy: 'Source declarations and codebase-memory navigation targets define page coverage. Runtime evidence is required for core journeys and representative visual states, not every implementation detail.',
+    completion_rule: 'Every in-scope source Screen and State must have an explicit Web outcome. All implemented states receive a basic render check; only the locked Critical Visual Set receives iOS/Web VRT.',
+    reconciliation_policy: 'Static discovery, codebase-memory relationships, runtime evidence, and Claude organization contribute evidence. Claude may organize facts but may not create unsupported facts.',
     graph_discovery: {
       status: 'PENDING',
       entry_points: [],

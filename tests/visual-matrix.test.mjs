@@ -30,7 +30,8 @@ function writePng(file) {
 function materialize(directory, matrix, changedReport = false) {
   const web = path.join(directory, 'webapp');
   for (const screen of matrix.screens) {
-    screen.representative = true;
+    screen.critical = true;
+    screen.selection_reason = 'CORE_FLOW';
     for (const state of screen.states) {
       state.required = true;
       for (const relative of [state.ios_flow, state.ios_screenshot, state.web_screenshot, state.report]) {
@@ -44,6 +45,12 @@ function materialize(directory, matrix, changedReport = false) {
         changed_ratio: changedReport ? 0.4 : 0.05,
         ssim_score: changedReport ? 0.5 : 0.95,
       }));
+      state.status = 'MEASURED';
+      state.review_status = changedReport ? 'REVIEW_RECOMMENDED' : 'NO_AUTOMATIC_FLAG';
+      state.metrics = {
+        changed_ratio: changedReport ? 0.4 : 0.05,
+        ssim_score: changedReport ? 0.5 : 0.95,
+      };
       const [testFile, testId] = state.web_test.split('#');
       fs.mkdirSync(path.dirname(path.join(web, testFile)), { recursive: true });
       fs.appendFileSync(path.join(web, testFile), `test('${testId}', () => {})\n`);
@@ -67,19 +74,20 @@ test('visual matrix is generated from arbitrary source screens without project-s
   assert.equal(matrix.screens.length, 2);
   assert.equal(matrix.screens[0].states[0].id, 'welcome-view-default');
   assert.equal(matrix.screens[1].states[0].id, 'items-view-default');
-  assert.equal(matrix.screens[0].representative, false);
+  assert.equal(matrix.screens[0].critical, false);
   assert.equal(matrix.screens[0].states[0].required, false);
   assert.doesNotMatch(JSON.stringify(matrix), /cart|favorite|ecommerce/i);
 });
 
-test('visual coverage requires evidence for selected representative screens', () => {
+test('visual coverage requires evidence for the Critical Visual Set', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-visual-matrix-'));
   const coverageFile = path.join(directory, 'coverage.json');
   const matrixFile = path.join(directory, 'visual-matrix.json');
   const sourceCoverage = coverage();
   const matrix = createVisualMatrix(sourceCoverage);
   for (const screen of matrix.screens) {
-    screen.representative = true;
+    screen.critical = true;
+    screen.selection_reason = 'CORE_FLOW';
     screen.states[0].required = true;
   }
   fs.writeFileSync(coverageFile, JSON.stringify(sourceCoverage));
@@ -97,7 +105,7 @@ test('visual coverage requires evidence for selected representative screens', ()
   assert.match(complete.stdout, /STATES=2/);
 });
 
-test('large structural visual differences keep the app incomplete', () => {
+test('large structural visual differences are measured and flagged for review without becoming a universal pass threshold', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-visual-quality-'));
   const coverageFile = path.join(directory, 'coverage.json');
   const matrixFile = path.join(directory, 'visual-matrix.json');
@@ -107,9 +115,10 @@ test('large structural visual differences keep the app incomplete', () => {
   const web = materialize(directory, matrix, true);
   fs.writeFileSync(matrixFile, JSON.stringify(matrix));
   const result = runCheck(directory, web, coverageFile, matrixFile);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /changed_ratio/);
-  assert.match(result.stderr, /SSIM/);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /APP VISUAL COVERAGE PASSED/);
+  const measured = JSON.parse(fs.readFileSync(matrixFile));
+  assert.equal(measured.screens[0].states[0].review_status, 'REVIEW_RECOMMENDED');
 });
 
 test('batch comparison fills the generic matrix and result without business-specific logic', () => {
@@ -118,7 +127,8 @@ test('batch comparison fills the generic matrix and result without business-spec
   const resultFile = path.join(directory, 'result.json');
   const matrix = createVisualMatrix({ project: 'demo', screens: [coverage().screens[0]] });
   const state = matrix.screens[0].states[0];
-  matrix.screens[0].representative = true;
+  matrix.screens[0].critical = true;
+  matrix.screens[0].selection_reason = 'CORE_FLOW';
   state.required = true;
   writePng(path.join(directory, state.ios_screenshot));
   writePng(path.join(directory, state.web_screenshot));
@@ -131,10 +141,12 @@ test('batch comparison fills the generic matrix and result without business-spec
     `--result=${resultFile}`,
   ], { encoding: 'utf8' });
   assert.equal(compared.status, 0, compared.stderr);
-  assert.match(compared.stdout, /STATUS=PASS/);
+  assert.match(compared.stdout, /STATUS=MEASURED/);
   assert.ok(fs.existsSync(path.join(directory, state.report)));
-  assert.equal(JSON.parse(fs.readFileSync(matrixFile)).screens[0].states[0].status, 'PASS');
-  assert.equal(JSON.parse(fs.readFileSync(resultFile)).visual_status, 'PASS');
+  assert.equal(JSON.parse(fs.readFileSync(matrixFile)).screens[0].states[0].status, 'MEASURED');
+  assert.equal(JSON.parse(fs.readFileSync(resultFile)).visual_status, 'MEASURED');
+  assert.equal(JSON.parse(fs.readFileSync(resultFile)).visual_review_status, 'USER_REVIEW_PENDING');
+  assert.equal(JSON.parse(fs.readFileSync(matrixFile)).screens[0].states[0].review_status, 'NO_AUTOMATIC_FLAG');
 });
 
 test('iOS flow runner derives all clicks from the project matrix', () => {
@@ -143,7 +155,8 @@ test('iOS flow runner derives all clicks from the project matrix', () => {
   const matrixFile = path.join(directory, 'visual-matrix.json');
   const coverageFile = path.join(directory, 'coverage.json');
   for (const screen of matrix.screens) {
-    screen.representative = true;
+    screen.critical = true;
+    screen.selection_reason = 'CORE_FLOW';
     for (const state of screen.states) {
       state.required = true;
       const flow = path.join(directory, state.ios_flow);

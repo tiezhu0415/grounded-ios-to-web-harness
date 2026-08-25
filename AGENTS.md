@@ -1,15 +1,15 @@
 # 所有 AI 工作规则
 
 1. 先读 `README.md`、`docs/项目技术方案.md`、当前项目蓝图和 `.planning/HANDOFF.md`。
-2. 整个 App 使用一个 `webapps/<project-id>/` 和一个 full-app Run；不拼接多个功能项目。
-3. `prepare` 只建立通用覆盖、行为旅程和代表视觉清单，不要求编码前完成全部截图。
-4. Claude 先用源码、Assets 和 codebase-memory 理解 App，自主完成一个连贯、真实可操作的 WebApp；Harness 不规定 React 架构、实现顺序或 CSS 写法。
-5. 第一版可运行后再对账：源码页面、关系图目标和 Web 路由必须一致。遗漏页面只补缺口，不推翻整体实现。
-6. Playwright 必须验证少量核心“操作→结果”旅程，并至少覆盖一个跨页面状态流；只 `goto`、查文字或截图不算行为测试。
-7. Maestro 和 Pixelmatch + SSIM 只用于代表页面和关键状态精修，不再要求每个页面先截图才能编码。
-8. 禁止把 iOS 运行截图作为 Web 页面、背景或遮罩；禁止用不可见 DOM 文案冒充功能。iOS 源 Assets 可以直接复用。
-9. iOS 与 Web 的核心旅程和代表视觉状态使用相同确定数据。外部服务不可用时只能使用明确的 DEBUG fixture/mock，不得虚构联网成功。
-10. 行为和视觉问题最多修复两轮；之后停止并向用户报告剩余差异。不得自动调用 Codex 形成 review—修复循环。
-11. `APP_COMPLETE` 必须同时通过页面覆盖、build、lint、Playwright、手机外壳、实现真实性、核心行为、代表视觉，并提供验证链接。
-12. 用户只参与两次：开始指定迁移范围，结束打开链接决定继续、调整或停止。
-13. 只维护现有技术方案、项目清单、项目蓝图、WebApp 查看清单和 Handoff；不增加重复治理文档。
+2. 整个 App 只使用一个 `webapps/<project-id>/` 和一个 full-app Run；Harness 不写死项目、页面或业务功能。
+3. 编码前用静态扫描、codebase-memory 和必要的 iOS 运行证据整理 `Screen + State + Flow + Data + Asset`；Claude 可以整理事实，但不得创造事实。
+4. 每条重要事实必须有 `source`、`evidence` 和 `confidence`。Data / Asset 来源也要在实现前写入 `truth-map.json`。完成事实和 Critical Visual Set、采集关键 iOS 状态后执行 `facts-lock`，再执行 `context`。
+5. 编码某屏时优先读取本 Run 对应的 `contexts/*.json` 和 `visual-grounding/*.json`，不要让陈旧整仓资料反复占据上下文。锁定后 Claude 仍自主决定 React 架构、组件、状态管理和 CSS。新证据需要改范围时用有记录的 `facts-lock --revise` 并重新生成 context，不得静默删减。
+6. 所有用户可见 `Screen + State` 都要有路由和基础 Playwright 渲染检查：能打开、非空、关键内容存在、图片可加载、无严重 console/page error。
+7. 少量核心旅程再做 Playwright 行为验证；只 `goto`、查文字或截图不算行为测试。
+8. 只有锁定的 Critical Visual Set 使用 Maestro + 生成前视觉依据 + Pixelmatch + SSIM；状态型核心页面同时覆盖空和有数据。完成自由首版后记录 `first-pass` checkpoint；每轮证据驱动修复记录 `repair` checkpoint，最多两轮。v0.x 指标用于分流而非永久统一阈值。
+9. 禁止把 iOS 截图当 Web 页面、背景或遮罩；禁止占位图片、测试数据、不可见 DOM 或无来源资源冒充真实迁移。
+10. 自动检查必须启动当前工作区的独占服务并生成本 Run 新截图，禁止复用旧端口、旧服务和旧视觉证据。所有固定页面、弹层和导航在桌面浏览器中也不得越出手机壳。
+11. `AUTO_COMPLETE` 只表示自动规则通过；最终仍是 `USER_ACCEPTED`。AI 必须提供验证链接，不能自行宣称用户已验收。
+12. 不自动调用 Codex，不形成 review—修复循环。只有用户明确要求时才审查。
+13. 只维护现有技术方案、项目清单、项目蓝图、WebApp 查看清单和 Handoff；不新增重复治理文档。

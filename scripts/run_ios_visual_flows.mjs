@@ -4,6 +4,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+function getBootedSimulatorUdid() {
+  const result = spawnSync('xcrun', ['simctl', 'list', 'devices', 'booted', '-j'], { encoding: 'utf8' });
+  if (result.error || result.status !== 0) throw new Error('Unable to list booted simulators');
+  const data = JSON.parse(result.stdout);
+  for (const runtime of Object.keys(data.devices || {})) {
+    for (const device of data.devices[runtime]) {
+      if (device.state === 'Booted' && device.udid) return device.udid;
+    }
+  }
+  throw new Error('No booted iOS simulator found');
+}
+
 function parseOptions(argv) {
   const options = { dryRun: false };
   for (const argument of argv) {
@@ -37,7 +49,7 @@ const matrix = JSON.parse(fs.readFileSync(matrixFile, 'utf8'));
 const coverage = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
 const flows = [];
 for (const screen of matrix.screens || []) {
-  if (screen.representative !== true) continue;
+  if (screen.critical !== true) continue;
   for (const state of screen.states || []) {
     if (state.required !== true) continue;
     const flow = safePath(runDirectory, state.ios_flow);
@@ -45,7 +57,7 @@ for (const screen of matrix.screens || []) {
     flows.push({ sourceId: screen.source_id, state, flow });
   }
 }
-if (flows.length === 0) throw new Error('visual matrix contains no representative iOS flows');
+if (flows.length === 0) throw new Error('visual matrix contains no Critical Visual Set iOS flows');
 
 for (const item of flows) {
   process.stdout.write(`${options.dryRun ? 'WOULD RUN' : 'RUNNING'} IOS FLOW state=${item.state.id} file=${path.relative(runDirectory, item.flow)}\n`);
@@ -54,7 +66,10 @@ for (const item of flows) {
   if (executed.error) throw executed.error;
   if (executed.status !== 0) process.exit(executed.status || 1);
   const screenshot = safePath(runDirectory, item.state.ios_screenshot);
-  if (!fs.existsSync(screenshot)) throw new Error(`Maestro flow did not create its iOS screenshot: ${item.state.ios_screenshot}`);
+  const screenshotResult = spawnSync('xcrun', ['simctl', 'io', getBootedSimulatorUdid(), 'screenshot', screenshot], { encoding: 'utf8' });
+  if (screenshotResult.error || screenshotResult.status !== 0) {
+    throw new Error(`Failed to capture iOS screenshot for ${item.state.id}: ${screenshotResult.stderr || screenshotResult.stdout}`);
+  }
   item.state.runtime_status = 'CAPTURED';
   item.state.discovered_by = [...new Set([...(item.state.discovered_by || []), 'runtime'])];
   const screen = (coverage.screens || []).find((entry) => entry.id === item.sourceId);

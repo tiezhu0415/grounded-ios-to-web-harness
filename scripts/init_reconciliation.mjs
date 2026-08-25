@@ -26,7 +26,7 @@ const coverage = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
 const matrix = JSON.parse(fs.readFileSync(matrixFile, 'utf8'));
 const discovered = new Map(discoverIosViews(sourceDirectory).map((item) => [item.id, item]));
 
-coverage.reconciliation_policy = 'Source declarations and codebase-memory navigation targets define page coverage. Runtime evidence is required for core journeys and representative visual states, not every implementation detail.';
+coverage.reconciliation_policy = 'Static discovery, codebase-memory and runtime evidence are reconciled as Screen+State facts. Runtime screenshots are required only for the locked Critical Visual Set.';
 coverage.graph_discovery ||= { status: 'PENDING', entry_points: [], targets: [], evidence: [], note: '' };
 const previousCandidates = new Map((coverage.state_candidates || []).map((candidate) => [candidate.id, candidate]));
 coverage.state_candidates = discoverStateCandidates(sourceDirectory).map((candidate) => ({

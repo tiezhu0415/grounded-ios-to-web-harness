@@ -18,8 +18,26 @@ function fixture() {
   fs.writeFileSync(path.join(source, 'Views', 'HomeView.swift'), 'import SwiftUI\nstruct HomeView: View { var body: some View { Text("Home") } }\n');
   fs.writeFileSync(path.join(source, 'Views', 'Subviews', 'CardView.swift'), 'import SwiftUI\nstruct CardView: View { var body: some View { Text("Card") } }\n');
   fs.writeFileSync(path.join(web, 'src', 'Home.tsx'), 'export default function Home() { return null }\n');
-  fs.writeFileSync(path.join(web, 'e2e', 'app.spec.ts'), 'test("home", () => {})\n');
+  fs.writeFileSync(path.join(web, 'e2e', 'app.spec.ts'), `test('home-render', async ({ page }) => { page.on('pageerror', () => {}); await page.goto('/home'); expect(page).toBeTruthy(); })\ntest('card-render', async ({ page }) => { page.on('console', () => {}); await page.goto('/card'); expect(page).toBeTruthy(); })\n`);
   return { directory, source, web };
+}
+
+function completeScreen(item, route, testId) {
+  item.status = 'IMPLEMENTED';
+  item.web = 'src/Home.tsx';
+  item.route = route;
+  item.test = 'e2e/app.spec.ts';
+  item.states ||= [{
+    id: `${item.declaration.replace(/View$/, '').toLowerCase()}-default`,
+    source_evidence: [`ALWAYS_VISIBLE:${item.source}#${item.declaration}`],
+    confidence: 'SUPPORTED',
+  }];
+  for (const state of item.states) {
+    state.status = 'IMPLEMENTED';
+    state.web_route = route;
+    state.render_test = `e2e/app.spec.ts#${testId}`;
+    state.render_status = 'PASSED';
+  }
 }
 
 function runCheck(coverageFile, source, web) {
@@ -45,10 +63,7 @@ test('full-app coverage passes only with a real route, Web file, and behavior te
   const coverageFile = path.join(directory, 'coverage.json');
   const coverage = createCoverage('demo', source);
   for (const item of coverage.screens) {
-    item.status = 'IMPLEMENTED';
-    item.web = 'src/Home.tsx';
-    item.route = '/home';
-    item.test = 'e2e/app.spec.ts';
+    completeScreen(item, '/home', 'home-render');
   }
   fs.writeFileSync(coverageFile, JSON.stringify(coverage));
   const result = runCheck(coverageFile, source, web);
@@ -87,11 +102,9 @@ test('a codebase-memory navigation target can promote a scanned component to a r
       graph: { status: 'CONFIRMED', navigation_entry: 'HomeView', evidence: ['trace_path'], inbound: [], outbound: [] },
     },
   });
+  completeScreen(coverage.screens.at(-1), '/card', 'card-render');
   for (const item of coverage.screens.filter((item) => item.declaration === 'HomeView')) {
-    item.status = 'IMPLEMENTED';
-    item.web = 'src/Home.tsx';
-    item.route = '/home';
-    item.test = 'e2e/app.spec.ts';
+    completeScreen(item, '/home', 'home-render');
   }
   fs.writeFileSync(coverageFile, JSON.stringify(coverage));
   const result = runCheck(coverageFile, source, web);

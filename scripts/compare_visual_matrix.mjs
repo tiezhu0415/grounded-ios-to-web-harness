@@ -39,13 +39,18 @@ const runDirectory = path.resolve(options['run-dir']);
 const matrixFile = path.resolve(options.matrix);
 const resultFile = path.resolve(options.result);
 const matrix = JSON.parse(fs.readFileSync(matrixFile, 'utf8'));
-const maxChangedRatio = Number(matrix.quality_policy?.max_changed_ratio);
-const minSsimScore = Number(matrix.quality_policy?.min_ssim_score);
 const comparisons = [];
 const failures = [];
+const triage = matrix.quality_policy?.review_triage || {};
+const changedRatioTrigger = Number(triage.changed_ratio_at_or_above);
+const ssimTrigger = Number(triage.ssim_at_or_below);
+
+if (triage.provisional !== true || !Number.isFinite(changedRatioTrigger) || !Number.isFinite(ssimTrigger)) {
+  throw new Error('visual matrix is missing provisional review_triage values');
+}
 
 for (const screen of matrix.screens || []) {
-  if (screen.representative !== true) continue;
+  if (screen.critical !== true) continue;
   for (const state of screen.states || []) {
     if (state.required !== true) continue;
     const label = `${screen.declaration}/${state.id}`;
@@ -55,6 +60,7 @@ for (const screen of matrix.screens || []) {
     if (!fs.existsSync(ios) || !fs.existsSync(web)) {
       failures.push(`${label} is missing ${!fs.existsSync(ios) ? 'iOS' : 'Web'} screenshot`);
       state.status = 'PENDING';
+      state.review_status = 'NOT_MEASURED';
       continue;
     }
     fs.mkdirSync(path.dirname(report), { recursive: true });
@@ -70,16 +76,19 @@ for (const screen of matrix.screens || []) {
     if (compared.status !== 0) {
       failures.push(`${label} comparison failed: ${(compared.stderr || compared.stdout).trim()}`);
       state.status = 'ERROR';
+      state.review_status = 'NOT_MEASURED';
       continue;
     }
     const metrics = JSON.parse(fs.readFileSync(report, 'utf8'));
-    const accepted = metrics.changed_ratio <= maxChangedRatio && metrics.ssim_score >= minSsimScore;
-    state.status = accepted ? 'PASS' : 'NEEDS_FIX';
+    state.status = 'MEASURED';
     state.metrics = {
       changed_ratio: metrics.changed_ratio,
       ssim_score: metrics.ssim_score,
       mean_channel_error: metrics.mean_channel_error,
     };
+    state.review_status = state.metrics.changed_ratio >= changedRatioTrigger || state.metrics.ssim_score <= ssimTrigger
+      ? 'REVIEW_RECOMMENDED'
+      : 'NO_AUTOMATIC_FLAG';
     comparisons.push({
       state: state.id,
       source_id: screen.source_id,
@@ -87,20 +96,23 @@ for (const screen of matrix.screens || []) {
       comparison_engine: metrics.engine?.primary,
       ...state.metrics,
       status: state.status,
+      review_status: state.review_status,
     });
-    if (!accepted) {
-      failures.push(`${label} needs refinement (changed_ratio=${metrics.changed_ratio}, SSIM=${metrics.ssim_score})`);
-    }
   }
 }
 
 atomicWrite(matrixFile, matrix);
 const result = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
 result.visual_comparisons = comparisons;
-result.visual_status = failures.length === 0 ? 'PASS' : 'NEEDS_FIX';
+result.visual_status = failures.length === 0 ? 'MEASURED' : 'INCOMPLETE';
+result.visual_review_status = failures.length > 0
+  ? 'NOT_READY'
+  : comparisons.some((comparison) => comparison.review_status === 'REVIEW_RECOMMENDED')
+    ? 'NEEDS_VISUAL_REVIEW'
+    : 'USER_REVIEW_PENDING';
 atomicWrite(resultFile, result);
 
-process.stdout.write(`VISUAL MATRIX COMPARED\nSTATES=${comparisons.length}\nSTATUS=${result.visual_status}\n`);
+process.stdout.write(`VISUAL MATRIX COMPARED\nSTATES=${comparisons.length}\nSTATUS=${result.visual_status}\nREVIEW=${result.visual_review_status}\n`);
 if (failures.length > 0) {
   process.stderr.write(`${failures.map((failure) => `- ${failure}`).join('\n')}\n`);
   process.exit(1);

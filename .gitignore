@@ -10,6 +10,7 @@ DerivedData/
 xcode/
 .runs/
 webapps/*/node_modules/
+webapps/*/dist/
 webapps/*/playwright-report/
 webapps/*/test-results/
 harness.yaml

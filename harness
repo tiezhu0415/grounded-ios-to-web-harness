@@ -7,6 +7,9 @@ usage() {
   cat <<'EOF'
 Usage:
   ./harness prepare --project <project-id> [--run-id <run-id>] [--dry-run]
+  ./harness facts-lock --project <project-id> --run-id <run-id> [--revise]
+  ./harness context --project <project-id> --run-id <run-id> [--ocr-language <lang>] [--no-ocr]
+  ./harness checkpoint --project <project-id> --run-id <run-id> --stage first-pass|repair
   ./harness capture --project <project-id> --feature <feature-id> [--run-id <run-id>] [--dry-run]
   ./harness ios-run --project <project-id> --run-id <run-id> [--dry-run]
   ./harness reconcile --project <project-id> --run-id <run-id>
@@ -19,6 +22,9 @@ Usage:
 
 Examples:
   ./harness prepare --project demo-app
+  ./harness facts-lock --project demo-app --run-id 20260818-full-app
+  ./harness context --project demo-app --run-id 20260818-full-app
+  ./harness checkpoint --project demo-app --run-id 20260818-full-app --stage first-pass
   ./harness ios-run --project demo-app --run-id 20260818-full-app
   ./harness reconcile --project demo-app --run-id 20260818-full-app
   ./harness behavior-check --project demo-app --run-id 20260818-full-app
@@ -74,6 +80,21 @@ find_source_dir() {
   return 1
 }
 
+find_free_port() {
+  node - <<'NODE'
+const net = require('node:net');
+const server = net.createServer();
+server.unref();
+server.on('error', (error) => { throw error; });
+server.listen(0, '127.0.0.1', () => {
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('failed to allocate a local port');
+  process.stdout.write(`${address.port}\n`);
+  server.close();
+});
+NODE
+}
+
 prepare_app() {
   local project="" run_id="" dry_run="false"
   while [[ $# -gt 0 ]]; do
@@ -127,10 +148,10 @@ prepare_app() {
 | 项目 | \`$project\` |
 | 源项目 | \`$source_rel\` |
 | WebApp | \`$web_rel\` |
-| 目标 | Claude 先自主完成统一、可操作的 WebApp；Harness 随后检查遗漏、核心行为和代表页面视觉 |
-| 完成定义 | 所有源页面均有 Web 路由；核心跨页面旅程真实可操作；代表页面完成视觉精修；用户获得验证链接 |
+| 目标 | 先锁定源码事实和关键视觉集合，再由 Claude 自主实现统一、可操作的 WebApp |
+| 完成定义 | 所有 Screen+State 均可打开并通过基础渲染；核心旅程可操作；关键视觉状态已量化；用户获得验证链接 |
 
-不要为了通过检查使用 iOS 截图作为 Web 页面。React 架构和实现方式由 Claude 自主决定；最多修复两轮，最终仍由用户验收。
+不得使用 iOS 截图充当 Web 页面，不得用占位图或测试数据冒充源项目事实。VRT 指标在 v0.x 只用于暴露差异，不是统一硬阈值。React 架构和实现方式由 Claude 自主决定；最多精修两轮，最终仍由用户验收。
 EOF
 
   node "$ROOT/scripts/app_inventory.mjs" \
@@ -141,6 +162,10 @@ EOF
     "--coverage=$temp_dir/项目覆盖.json" "--output=$temp_dir/behavior-journeys.json" >/dev/null
   node "$ROOT/scripts/init_reconciliation.mjs" \
     "--coverage=$temp_dir/项目覆盖.json" "--matrix=$temp_dir/visual-matrix.json" "--source=$source_dir" >/dev/null
+  node "$ROOT/scripts/source_facts.mjs" \
+    "--coverage=$temp_dir/项目覆盖.json" "--output=$temp_dir/source-facts.json" >/dev/null
+  node "$ROOT/scripts/truth_map.mjs" \
+    "--project=$project" "--output=$temp_dir/truth-map.json" >/dev/null
 
   cat > "$temp_dir/result.json" <<EOF
 {
@@ -153,15 +178,151 @@ EOF
   "coverage": "项目覆盖.json",
   "behavior_journeys": "behavior-journeys.json",
   "visual_matrix": "visual-matrix.json",
+  "source_facts": "source-facts.json",
+  "truth_map": "truth-map.json",
+  "source_facts_status": "UNLOCKED",
+  "build_context_status": "PENDING",
+  "work_cycle": "work-cycle.json",
   "reconciliation_status": "PENDING",
   "visual_comparisons": []
 }
 EOF
 
+  cat > "$temp_dir/work-cycle.json" <<EOF
+{
+  "version": 1,
+  "project": "$project",
+  "method": "GROUNDED_FIRST_PASS_THEN_BOUNDED_REPAIR",
+  "phase": "DISCOVERY",
+  "maximum_repair_rounds": 2,
+  "first_pass": { "status": "PENDING" },
+  "repairs": [],
+  "last_checkpoint": null
+}
+EOF
+
   mv "$temp_dir" "$run_dir"
   trap - EXIT
-  printf 'HARNESS APP RUN CREATED\nPROJECT=%s\nSOURCE=%s\nWEBAPP=%s\nRUN_ID=%s\nRUN_DIR=.runs/%s/%s\nNEXT=Use source and codebase-memory to build one coherent WebApp first. After it runs, reconcile coverage, define core behavior journeys, then visually refine representative screens.\n' \
+  printf 'HARNESS APP RUN CREATED\nPROJECT=%s\nSOURCE=%s\nWEBAPP=%s\nRUN_ID=%s\nRUN_DIR=.runs/%s/%s\nNEXT=Complete source facts and the Critical Visual Set, capture required iOS states, lock facts, then run context before implementation.\n' \
     "$project" "$source_rel" "$web_rel" "$run_id" "$project" "$run_id"
+}
+
+build_context() {
+  local project="" run_id="" ocr_language="eng" no_ocr="false"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project) [[ $# -ge 2 ]] || fail "--project needs a value"; project="$2"; shift 2 ;;
+      --run-id) [[ $# -ge 2 ]] || fail "--run-id needs a value"; run_id="$2"; shift 2 ;;
+      --ocr-language) [[ $# -ge 2 ]] || fail "--ocr-language needs a value"; ocr_language="$2"; shift 2 ;;
+      --no-ocr) no_ocr="true"; shift ;;
+      -h|--help) usage; exit 0 ;;
+      *) fail "unknown context option: $1" ;;
+    esac
+  done
+  [[ -n "$project" && -n "$run_id" ]] || fail "context requires --project and --run-id"
+  require_slug "project-id" "$project"
+  require_slug "run-id" "$run_id"
+  [[ "$ocr_language" =~ ^[A-Za-z0-9_+.-]+$ ]] || fail "invalid OCR language: $ocr_language"
+  local run_dir args
+  run_dir="$ROOT/.runs/$project/$run_id"
+  [[ -d "$run_dir" ]] || fail "run not found: .runs/$project/$run_id"
+  args=(
+    "--coverage=$run_dir/项目覆盖.json"
+    "--facts=$run_dir/source-facts.json"
+    "--matrix=$run_dir/visual-matrix.json"
+    "--truth-map=$run_dir/truth-map.json"
+    "--run-dir=$run_dir"
+    "--ocr-language=$ocr_language"
+  )
+  if [[ "$no_ocr" == "true" ]]; then args+=("--no-ocr=true"); fi
+  node "$ROOT/scripts/build_context.mjs" "${args[@]}"
+  node - "$run_dir/result.json" "$run_dir/work-cycle.json" "$run_dir/context-index.json" <<'NODE'
+const fs = require('node:fs');
+const [file, cycleFile, contextFile] = process.argv.slice(2);
+const result = JSON.parse(fs.readFileSync(file, 'utf8'));
+result.build_context_status = 'READY';
+result.build_context = 'context-index.json';
+result.build_context_generated_at = new Date().toISOString();
+const temporary = `${file}.tmp-${process.pid}`;
+fs.writeFileSync(temporary, `${JSON.stringify(result, null, 2)}\n`);
+fs.renameSync(temporary, file);
+const cycle = JSON.parse(fs.readFileSync(cycleFile, 'utf8'));
+const context = JSON.parse(fs.readFileSync(contextFile, 'utf8'));
+const contextKey = [context.facts_lock_sha256, context.visual_plan_sha256, context.truth_sources_sha256].join(':');
+if (cycle.last_checkpoint?.context_key && cycle.last_checkpoint.context_key !== contextKey) {
+  cycle.first_pass = { status: 'PENDING' };
+  cycle.repairs = [];
+  cycle.last_checkpoint = null;
+}
+cycle.phase = 'IMPLEMENT';
+const cycleTemporary = `${cycleFile}.tmp-${process.pid}`;
+fs.writeFileSync(cycleTemporary, `${JSON.stringify(cycle, null, 2)}\n`);
+fs.renameSync(cycleTemporary, cycleFile);
+NODE
+}
+
+checkpoint() {
+  local project="" run_id="" stage=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project) [[ $# -ge 2 ]] || fail "--project needs a value"; project="$2"; shift 2 ;;
+      --run-id) [[ $# -ge 2 ]] || fail "--run-id needs a value"; run_id="$2"; shift 2 ;;
+      --stage) [[ $# -ge 2 ]] || fail "--stage needs a value"; stage="$2"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) fail "unknown checkpoint option: $1" ;;
+    esac
+  done
+  [[ -n "$project" && -n "$run_id" && -n "$stage" ]] || fail "checkpoint requires --project, --run-id, and --stage"
+  require_slug "project-id" "$project"
+  require_slug "run-id" "$run_id"
+  [[ "$stage" == "first-pass" || "$stage" == "repair" ]] || fail "--stage must be first-pass or repair"
+  local run_dir web_dir
+  run_dir="$ROOT/.runs/$project/$run_id"
+  web_dir="$ROOT/webapps/$project"
+  [[ -f "$run_dir/work-cycle.json" && -f "$run_dir/context-index.json" ]] || fail "run context is not ready; run facts-lock and context first"
+  [[ -d "$web_dir" ]] || fail "WebApp not found: webapps/$project"
+  node "$ROOT/scripts/build_context.mjs" \
+    "--coverage=$run_dir/项目覆盖.json" "--facts=$run_dir/source-facts.json" \
+    "--matrix=$run_dir/visual-matrix.json" "--truth-map=$run_dir/truth-map.json" \
+    "--run-dir=$run_dir" "--check=true"
+  node "$ROOT/scripts/work_cycle.mjs" \
+    "--cycle=$run_dir/work-cycle.json" "--web=$web_dir" "--context-index=$run_dir/context-index.json" \
+    "--action=checkpoint" "--stage=$stage"
+}
+
+facts_lock() {
+  local project="" run_id="" revise="false"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project) [[ $# -ge 2 ]] || fail "--project needs a value"; project="$2"; shift 2 ;;
+      --run-id) [[ $# -ge 2 ]] || fail "--run-id needs a value"; run_id="$2"; shift 2 ;;
+      --revise) revise="true"; shift ;;
+      -h|--help) usage; exit 0 ;;
+      *) fail "unknown facts-lock option: $1" ;;
+    esac
+  done
+  [[ -n "$project" && -n "$run_id" ]] || fail "facts-lock requires --project and --run-id"
+  require_slug "project-id" "$project"
+  require_slug "run-id" "$run_id"
+  local run_dir coverage_file matrix_file facts_file
+  run_dir="$ROOT/.runs/$project/$run_id"
+  coverage_file="$run_dir/项目覆盖.json"
+  matrix_file="$run_dir/visual-matrix.json"
+  facts_file="$run_dir/source-facts.json"
+  [[ -f "$coverage_file" && -f "$matrix_file" && -f "$facts_file" ]] || fail "coverage, visual matrix, or source facts is missing"
+  local args=("--coverage=$coverage_file" "--matrix=$matrix_file" "--facts=$facts_file")
+  if [[ "$revise" == "true" ]]; then args+=("--revise=true"); fi
+  node "$ROOT/scripts/lock_source_facts.mjs" "${args[@]}"
+  node - "$run_dir/result.json" <<'NODE'
+const fs = require('node:fs');
+const file = process.argv[2];
+const result = JSON.parse(fs.readFileSync(file, 'utf8'));
+result.source_facts_status = 'LOCKED';
+result.source_facts_locked_at = new Date().toISOString();
+const temporary = `${file}.tmp-${process.pid}`;
+fs.writeFileSync(temporary, `${JSON.stringify(result, null, 2)}\n`);
+fs.renameSync(temporary, file);
+NODE
 }
 
 reconcile() {
@@ -551,13 +712,17 @@ check_run() {
   [[ "$mode" == "mapping" || "$mode" == "ios" || "$mode" == "complete" || "$mode" == "app" ]] || \
     fail "--mode must be mapping, ios, complete, or app"
 
-  local run_dir result_file mapping_file coverage_file matrix_file journeys_file ios_evidence web_evidence status source_dir web_dir
+  local run_dir result_file mapping_file coverage_file matrix_file journeys_file facts_file truth_file context_file cycle_file ios_evidence web_evidence status source_dir web_dir test_port evidence_after visual_review_status
   run_dir="$ROOT/.runs/$project/$run_id"
   result_file="$run_dir/result.json"
   mapping_file="$run_dir/组件映射.md"
   coverage_file="$run_dir/项目覆盖.json"
   matrix_file="$run_dir/visual-matrix.json"
   journeys_file="$run_dir/behavior-journeys.json"
+  facts_file="$run_dir/source-facts.json"
+  truth_file="$run_dir/truth-map.json"
+  context_file="$run_dir/context-index.json"
+  cycle_file="$run_dir/work-cycle.json"
   [[ -d "$run_dir" ]] || fail "run not found: .runs/$project/$run_id"
   [[ -f "$run_dir/scope.md" ]] || fail "scope.md is missing"
   [[ -f "$result_file" ]] || fail "result.json is missing"
@@ -583,11 +748,22 @@ check_run() {
     [[ -f "$coverage_file" ]] || fail "项目覆盖.json is missing; start full-project work with ./harness prepare"
     [[ -f "$matrix_file" ]] || fail "visual-matrix.json is missing; regenerate the full-app run"
     [[ -f "$journeys_file" ]] || fail "behavior-journeys.json is missing; regenerate the full-app run"
+    [[ -f "$facts_file" ]] || fail "source-facts.json is missing; create a SIMPLIFY v2 run"
+    [[ -f "$truth_file" ]] || fail "truth-map.json is missing; create a SIMPLIFY v2 run"
+    [[ -f "$context_file" ]] || fail "context-index.json is missing; run ./harness context before implementation"
+    [[ -f "$cycle_file" ]] || fail "work-cycle.json is missing; create a fresh grounded-first-pass Run"
     source_dir="$(find_source_dir "$project")" || fail "source project not found under xcode/: $project"
     web_dir="$ROOT/webapps/$project"
     [[ -d "$web_dir" ]] || fail "WebApp not found: webapps/$project"
     node "$ROOT/scripts/check_app_coverage.mjs" \
       "--coverage=$coverage_file" "--source=$source_dir" "--web=$web_dir"
+    node "$ROOT/scripts/check_source_facts.mjs" \
+      "--coverage=$coverage_file" "--facts=$facts_file" "--matrix=$matrix_file"
+    node "$ROOT/scripts/build_context.mjs" \
+      "--coverage=$coverage_file" "--facts=$facts_file" "--matrix=$matrix_file" \
+      "--truth-map=$truth_file" "--run-dir=$run_dir" "--check=true"
+    node "$ROOT/scripts/work_cycle.mjs" \
+      "--cycle=$cycle_file" "--web=$web_dir" "--context-index=$context_file" "--action=check"
     node "$ROOT/scripts/check_reconciliation.mjs" \
       "--coverage=$coverage_file" "--matrix=$matrix_file" "--journeys=$journeys_file" "--run-dir=$run_dir"
     node - "$web_dir/package.json" <<'NODE'
@@ -598,14 +774,29 @@ for (const script of ['build', 'lint', 'test:e2e']) {
   if (!pkg.scripts?.[script]) throw new Error(`WebApp package.json is missing script: ${script}`);
 }
 NODE
-    (cd "$web_dir" && npm run build && npm run lint && npm run test:e2e)
+    test_port="$(find_free_port)"
+    evidence_after="$(date +%s)"
+    (cd "$web_dir" && npm run build && npm run lint && \
+      HARNESS_WEB_PORT="$test_port" \
+      BASE_URL="http://127.0.0.1:$test_port" \
+      HARNESS_RUN_DIR="$run_dir" \
+      npm run test:e2e)
     node "$ROOT/scripts/check_mobile_shell.mjs" "--web-dir=$web_dir" "--max-width=430"
-    node "$ROOT/scripts/check_web_integrity.mjs" "--web=$web_dir" "--run-dir=$run_dir"
+    node "$ROOT/scripts/compare_visual_matrix.mjs" \
+      "--matrix=$matrix_file" "--run-dir=$run_dir" "--result=$result_file"
+    node "$ROOT/scripts/check_web_integrity.mjs" \
+      "--web=$web_dir" "--run-dir=$run_dir" "--source=$source_dir" "--truth-map=$truth_file"
     node "$ROOT/scripts/check_behavior_journeys.mjs" \
       "--coverage=$coverage_file" "--journeys=$journeys_file" "--web=$web_dir"
     node "$ROOT/scripts/check_visual_matrix.mjs" \
-      "--coverage=$coverage_file" "--matrix=$matrix_file" "--run-dir=$run_dir" "--web=$web_dir"
-    status="APP_COMPLETE"
+      "--coverage=$coverage_file" "--matrix=$matrix_file" "--run-dir=$run_dir" "--web=$web_dir" \
+      "--evidence-after=$evidence_after"
+    visual_review_status="$(node -e 'const fs=require("node:fs"); const result=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(result.visual_review_status || "NOT_READY")' "$result_file")"
+    if [[ "$visual_review_status" == "NEEDS_VISUAL_REVIEW" ]]; then
+      status="NEEDS_REVISION"
+    else
+      status="AUTO_COMPLETE"
+    fi
   fi
 
   if [[ "$mode" == "mapping" ]]; then
@@ -625,18 +816,44 @@ NODE
     status="IOS_CAPTURED"
   fi
 
-  node - "$result_file" "$status" <<'NODE'
+  node - "$result_file" "$status" "$matrix_file" <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
-const [file, status] = process.argv.slice(2);
+const [file, status, matrixFile] = process.argv.slice(2);
 const result = JSON.parse(fs.readFileSync(file, 'utf8'));
-const names = fs.readdirSync(path.dirname(file));
+const runDirectory = path.dirname(file);
+const walk = (directory) => fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+  const full = path.join(directory, entry.name);
+  return entry.isDirectory() ? walk(full) : [path.relative(runDirectory, full).split(path.sep).join('/')];
+});
+const names = walk(runDirectory);
 result.status = status;
-if (status === 'APP_COMPLETE') result.reconciliation_status = 'COMPLETE';
+if (status === 'AUTO_COMPLETE' || status === 'NEEDS_REVISION') {
+  result.reconciliation_status = 'COMPLETE';
+  result.user_acceptance = result.user_acceptance === 'USER_ACCEPTED' ? 'USER_ACCEPTED' : 'PENDING';
+  const matrix = JSON.parse(fs.readFileSync(matrixFile, 'utf8'));
+  result.visual_comparisons = matrix.screens
+    .filter((screen) => screen.critical === true)
+    .flatMap((screen) => (screen.states || []).filter((state) => state.required === true).map((state) => ({
+      state: state.id,
+      source_id: screen.source_id,
+      report: state.report,
+      comparison_engine: 'pixelmatch',
+      changed_ratio: state.metrics.changed_ratio,
+      ssim_score: state.metrics.ssim_score,
+      mean_channel_error: state.metrics.mean_channel_error,
+      status: 'MEASURED',
+      review_status: state.review_status,
+    })));
+  result.visual_status = 'MEASURED';
+  result.visual_review_status = result.visual_comparisons.some((item) => item.review_status === 'REVIEW_RECOMMENDED')
+    ? 'NEEDS_VISUAL_REVIEW'
+    : 'USER_REVIEW_PENDING';
+}
 result.checked_at = new Date().toISOString();
 result.evidence = {
-  ios: names.filter((name) => /^ios[-_].*\.png$/i.test(name)).sort(),
-  web: names.filter((name) => /^web[-_].*\.png$/i.test(name)).sort()
+  ios: names.filter((name) => /(?:^|\/)ios(?:[-_/]).*\.png$/i.test(name)).sort(),
+  web: names.filter((name) => /(?:^|\/)web(?:[-_/]).*\.png$/i.test(name)).sort()
 };
 result.visual_comparisons = (Array.isArray(result.visual_comparisons) ? result.visual_comparisons : [])
   .filter((item) => typeof item.report === 'string' && names.includes(item.report));
@@ -645,6 +862,11 @@ fs.writeFileSync(temp, `${JSON.stringify(result, null, 2)}\n`);
 fs.renameSync(temp, file);
 NODE
 
+  if [[ "$status" == "NEEDS_REVISION" ]]; then
+    printf 'HARNESS CHECK NEEDS REVISION\nPROJECT=%s\nRUN_ID=%s\nMODE=%s\nSTATUS=%s\nREASON=Critical visual differences require review; inspect the current Run diff reports.\nRESULT=.runs/%s/%s/result.json\n' \
+      "$project" "$run_id" "$mode" "$status" "$project" "$run_id"
+    return 2
+  fi
   printf 'HARNESS CHECK PASSED\nPROJECT=%s\nRUN_ID=%s\nMODE=%s\nSTATUS=%s\nRESULT=.runs/%s/%s/result.json\n' \
     "$project" "$run_id" "$mode" "$status" "$project" "$run_id"
 }
@@ -653,6 +875,9 @@ command="${1:-help}"
 if [[ $# -gt 0 ]]; then shift; fi
 case "$command" in
   prepare) prepare_app "$@" ;;
+  facts-lock) facts_lock "$@" ;;
+  context) build_context "$@" ;;
+  checkpoint) checkpoint "$@" ;;
   capture) capture "$@" ;;
   ios-run) ios_run "$@" ;;
   reconcile) reconcile "$@" ;;

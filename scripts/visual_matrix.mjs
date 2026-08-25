@@ -23,44 +23,52 @@ export function slugify(value) {
 
 export function createVisualMatrix(coverage) {
   const screens = Array.isArray(coverage.screens) ? coverage.screens : [];
-  const minimumRepresentativeScreens = Math.min(3, screens.length);
+  const minimumCriticalScreens = Math.min(3, screens.length);
   return {
-    version: 2,
+    version: 3,
     project: coverage.project,
     generated_at: new Date().toISOString(),
-    completion_rule: 'After the WebApp works, select representative screens for iOS/Web visual refinement. Visual similarity does not prove page coverage or behavior.',
+    completion_rule: 'Measure the locked Critical Visual Set only. Metrics expose visual risk; they do not prove coverage, behavior, or user acceptance.',
     quality_policy: {
-      max_changed_ratio: 0.25,
-      min_ssim_score: 0.65,
-      minimum_representative_screens: minimumRepresentativeScreens,
+      mode: 'METRICS_EXPERIMENTAL',
+      metrics_are_experimental: true,
+      minimum_critical_screens: minimumCriticalScreens,
+      allowed_selection_reasons: ['TOP_LEVEL_NAV', 'CORE_FLOW', 'DATA_DENSE', 'STATEFUL', 'FORM_OR_MUTATION', 'UNIQUE_LAYOUT', 'HIGH_INITIAL_DIFF'],
       refinement_round_limit: 2,
-      note: 'Choose the shell plus visually important screens. These broad limits catch structural redesigns; the user performs final acceptance.',
+      review_triage: {
+        provisional: true,
+        changed_ratio_at_or_above: 0.35,
+        ssim_at_or_below: 0.45,
+      },
+      note: 'These values only flag large differences for review; they are not visual acceptance thresholds. The user still accepts the result.',
     },
     screens: screens.map((screen) => {
-      const stateId = `${slugify(screen.declaration)}-default`;
+      const coverageStates = Array.isArray(screen.states) && screen.states.length > 0
+        ? screen.states
+        : [{ id: `${slugify(screen.declaration)}-default`, label: 'Default state', source_evidence: [`SOURCE:${screen.id}`] }];
       return {
         source_id: screen.id,
         declaration: screen.declaration,
         role: 'page',
         route: screen.route || '',
-        representative: false,
-        states: [
-          {
-            id: stateId,
-            label: 'Default meaningful state; replace or add states after source/runtime analysis.',
+        critical: false,
+        selection_reason: '',
+        states: coverageStates.map((coverageState) => ({
+            id: coverageState.id,
+            label: coverageState.label,
             required: false,
-            ios_flow: `flows/ios/${stateId}.yaml`,
-            ios_screenshot: `ios/${stateId}.png`,
-            web_test: `tests/e2e/visual.spec.ts#${stateId}`,
-            web_screenshot: `web/${stateId}.png`,
-            report: `visual/${stateId}.json`,
+            ios_flow: `flows/ios/${coverageState.id}.yaml`,
+            ios_screenshot: `ios/${coverageState.id}.png`,
+            web_test: `tests/e2e/visual.spec.ts#${coverageState.id}`,
+            web_screenshot: `web/${coverageState.id}.png`,
+            report: `visual/${coverageState.id}.json`,
             status: 'PENDING',
+            review_status: 'NOT_MEASURED',
             discovered_by: ['source'],
-            source_evidence: [`ALWAYS_VISIBLE:${screen.id}`],
+            source_evidence: coverageState.source_evidence || [`SOURCE:${screen.id}`],
             runtime_status: 'PENDING',
             note: '',
-          },
-        ],
+          })),
       };
     }),
   };
