@@ -9,7 +9,7 @@ Usage:
   ./harness prepare --project <project-id> [--run-id <run-id>] [--dry-run]
   ./harness facts-lock --project <project-id> --run-id <run-id> [--revise]
   ./harness context --project <project-id> --run-id <run-id> [--ocr-language <lang>] [--no-ocr]
-  ./harness checkpoint --project <project-id> --run-id <run-id> --stage first-pass|repair
+  ./harness checkpoint --project <project-id> --run-id <run-id> --stage first-pass|repair [--evidence <run-relative-file>]
   ./harness capture --project <project-id> --feature <feature-id> [--run-id <run-id>] [--dry-run]
   ./harness ios-run --project <project-id> --run-id <run-id> [--dry-run]
   ./harness reconcile --project <project-id> --run-id <run-id>
@@ -166,6 +166,9 @@ EOF
     "--coverage=$temp_dir/项目覆盖.json" "--output=$temp_dir/source-facts.json" >/dev/null
   node "$ROOT/scripts/truth_map.mjs" \
     "--project=$project" "--output=$temp_dir/truth-map.json" >/dev/null
+  node "$ROOT/scripts/state_snapshots.mjs" \
+    "--coverage=$temp_dir/项目覆盖.json" "--matrix=$temp_dir/visual-matrix.json" \
+    "--output=$temp_dir/state-snapshots.json" >/dev/null
 
   cat > "$temp_dir/result.json" <<EOF
 {
@@ -180,6 +183,7 @@ EOF
   "visual_matrix": "visual-matrix.json",
   "source_facts": "source-facts.json",
   "truth_map": "truth-map.json",
+  "state_snapshots": "state-snapshots.json",
   "source_facts_status": "UNLOCKED",
   "build_context_status": "PENDING",
   "work_cycle": "work-cycle.json",
@@ -231,6 +235,7 @@ build_context() {
     "--facts=$run_dir/source-facts.json"
     "--matrix=$run_dir/visual-matrix.json"
     "--truth-map=$run_dir/truth-map.json"
+    "--state-snapshots=$run_dir/state-snapshots.json"
     "--run-dir=$run_dir"
     "--ocr-language=$ocr_language"
   )
@@ -248,7 +253,7 @@ fs.writeFileSync(temporary, `${JSON.stringify(result, null, 2)}\n`);
 fs.renameSync(temporary, file);
 const cycle = JSON.parse(fs.readFileSync(cycleFile, 'utf8'));
 const context = JSON.parse(fs.readFileSync(contextFile, 'utf8'));
-const contextKey = [context.facts_lock_sha256, context.visual_plan_sha256, context.truth_sources_sha256].join(':');
+const contextKey = [context.facts_lock_sha256, context.visual_plan_sha256, context.truth_sources_sha256, context.state_snapshots_sha256].join(':');
 if (cycle.last_checkpoint?.context_key && cycle.last_checkpoint.context_key !== contextKey) {
   cycle.first_pass = { status: 'PENDING' };
   cycle.repairs = [];
@@ -262,12 +267,13 @@ NODE
 }
 
 checkpoint() {
-  local project="" run_id="" stage=""
+  local project="" run_id="" stage="" evidence=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --project) [[ $# -ge 2 ]] || fail "--project needs a value"; project="$2"; shift 2 ;;
       --run-id) [[ $# -ge 2 ]] || fail "--run-id needs a value"; run_id="$2"; shift 2 ;;
       --stage) [[ $# -ge 2 ]] || fail "--stage needs a value"; stage="$2"; shift 2 ;;
+      --evidence) [[ $# -ge 2 ]] || fail "--evidence needs a value"; evidence="$2"; shift 2 ;;
       -h|--help) usage; exit 0 ;;
       *) fail "unknown checkpoint option: $1" ;;
     esac
@@ -276,6 +282,11 @@ checkpoint() {
   require_slug "project-id" "$project"
   require_slug "run-id" "$run_id"
   [[ "$stage" == "first-pass" || "$stage" == "repair" ]] || fail "--stage must be first-pass or repair"
+  if [[ "$stage" == "repair" ]]; then
+    [[ -n "$evidence" ]] || fail "repair checkpoint requires --evidence with a current Run failure/report"
+    [[ "$evidence" != /* && "$evidence" != *".."* && -f "$ROOT/.runs/$project/$run_id/$evidence" ]] || \
+      fail "repair evidence must be an existing safe path inside the current Run: $evidence"
+  fi
   local run_dir web_dir
   run_dir="$ROOT/.runs/$project/$run_id"
   web_dir="$ROOT/webapps/$project"
@@ -284,10 +295,14 @@ checkpoint() {
   node "$ROOT/scripts/build_context.mjs" \
     "--coverage=$run_dir/项目覆盖.json" "--facts=$run_dir/source-facts.json" \
     "--matrix=$run_dir/visual-matrix.json" "--truth-map=$run_dir/truth-map.json" \
+    "--state-snapshots=$run_dir/state-snapshots.json" \
     "--run-dir=$run_dir" "--check=true"
-  node "$ROOT/scripts/work_cycle.mjs" \
-    "--cycle=$run_dir/work-cycle.json" "--web=$web_dir" "--context-index=$run_dir/context-index.json" \
+  local checkpoint_args=(
+    "--cycle=$run_dir/work-cycle.json" "--web=$web_dir" "--context-index=$run_dir/context-index.json"
     "--action=checkpoint" "--stage=$stage"
+  )
+  if [[ -n "$evidence" ]]; then checkpoint_args+=("--evidence=$evidence"); fi
+  node "$ROOT/scripts/work_cycle.mjs" "${checkpoint_args[@]}"
 }
 
 facts_lock() {
@@ -304,24 +319,32 @@ facts_lock() {
   [[ -n "$project" && -n "$run_id" ]] || fail "facts-lock requires --project and --run-id"
   require_slug "project-id" "$project"
   require_slug "run-id" "$run_id"
-  local run_dir coverage_file matrix_file facts_file
+  local run_dir coverage_file matrix_file facts_file snapshots_file
   run_dir="$ROOT/.runs/$project/$run_id"
   coverage_file="$run_dir/项目覆盖.json"
   matrix_file="$run_dir/visual-matrix.json"
   facts_file="$run_dir/source-facts.json"
-  [[ -f "$coverage_file" && -f "$matrix_file" && -f "$facts_file" ]] || fail "coverage, visual matrix, or source facts is missing"
-  local args=("--coverage=$coverage_file" "--matrix=$matrix_file" "--facts=$facts_file")
+  snapshots_file="$run_dir/state-snapshots.json"
+  [[ -f "$coverage_file" && -f "$matrix_file" && -f "$facts_file" && -f "$snapshots_file" ]] || fail "coverage, visual matrix, source facts, or state snapshots is missing"
+  local args=("--coverage=$coverage_file" "--matrix=$matrix_file" "--facts=$facts_file" "--snapshots=$snapshots_file")
   if [[ "$revise" == "true" ]]; then args+=("--revise=true"); fi
   node "$ROOT/scripts/lock_source_facts.mjs" "${args[@]}"
-  node - "$run_dir/result.json" <<'NODE'
+  node - "$run_dir/result.json" "$run_dir/source-facts.json" "$run_dir/behavior-journeys.json" <<'NODE'
 const fs = require('node:fs');
-const file = process.argv[2];
+const [file, factsFile, journeysFile] = process.argv.slice(2);
 const result = JSON.parse(fs.readFileSync(file, 'utf8'));
 result.source_facts_status = 'LOCKED';
 result.source_facts_locked_at = new Date().toISOString();
 const temporary = `${file}.tmp-${process.pid}`;
 fs.writeFileSync(temporary, `${JSON.stringify(result, null, 2)}\n`);
 fs.renameSync(temporary, file);
+const facts = JSON.parse(fs.readFileSync(factsFile, 'utf8'));
+const journeys = JSON.parse(fs.readFileSync(journeysFile, 'utf8'));
+journeys.facts_lock_sha256 = facts.lock.content_sha256;
+journeys.state_snapshots_sha256 = facts.lock.state_snapshots_sha256;
+const journeysTemporary = `${journeysFile}.tmp-${process.pid}`;
+fs.writeFileSync(journeysTemporary, `${JSON.stringify(journeys, null, 2)}\n`);
+fs.renameSync(journeysTemporary, journeysFile);
 NODE
 }
 
@@ -371,15 +394,19 @@ behavior_check() {
   [[ -n "$project" && -n "$run_id" ]] || fail "behavior-check requires --project and --run-id"
   require_slug "project-id" "$project"
   require_slug "run-id" "$run_id"
-  local run_dir coverage_file journeys_file web_dir
+  local run_dir coverage_file journeys_file facts_file snapshots_file matrix_file web_dir
   run_dir="$ROOT/.runs/$project/$run_id"
   coverage_file="$run_dir/项目覆盖.json"
   journeys_file="$run_dir/behavior-journeys.json"
+  facts_file="$run_dir/source-facts.json"
+  snapshots_file="$run_dir/state-snapshots.json"
+  matrix_file="$run_dir/visual-matrix.json"
   web_dir="$ROOT/webapps/$project"
-  [[ -f "$coverage_file" && -f "$journeys_file" ]] || fail "coverage or behavior-journeys.json is missing"
+  [[ -f "$coverage_file" && -f "$journeys_file" && -f "$facts_file" && -f "$snapshots_file" && -f "$matrix_file" ]] || fail "coverage, behavior journeys, locked facts, state snapshots, or visual matrix is missing"
   [[ -d "$web_dir" ]] || fail "WebApp not found: webapps/$project"
   node "$ROOT/scripts/check_behavior_journeys.mjs" \
-    "--coverage=$coverage_file" "--journeys=$journeys_file" "--web=$web_dir"
+    "--coverage=$coverage_file" "--journeys=$journeys_file" "--facts=$facts_file" \
+    "--snapshots=$snapshots_file" "--matrix=$matrix_file" "--web=$web_dir"
 }
 
 ios_run() {
@@ -682,6 +709,7 @@ result.visual_comparisons.push({
   changed_ratio: report.changed_ratio,
   ssim_score: report.ssim_score,
   mean_channel_error: report.mean_channel_error,
+  max_region_changed_ratio: report.highest_difference_regions?.[0]?.changed_ratio ?? 0,
 });
 const temp = `${file}.tmp-${process.pid}`;
 fs.writeFileSync(temp, `${JSON.stringify(result, null, 2)}\n`);
@@ -712,7 +740,7 @@ check_run() {
   [[ "$mode" == "mapping" || "$mode" == "ios" || "$mode" == "complete" || "$mode" == "app" ]] || \
     fail "--mode must be mapping, ios, complete, or app"
 
-  local run_dir result_file mapping_file coverage_file matrix_file journeys_file facts_file truth_file context_file cycle_file ios_evidence web_evidence status source_dir web_dir test_port evidence_after visual_review_status
+  local run_dir result_file mapping_file coverage_file matrix_file journeys_file facts_file truth_file snapshots_file context_file cycle_file ios_evidence web_evidence status source_dir web_dir test_port evidence_after visual_review_status
   run_dir="$ROOT/.runs/$project/$run_id"
   result_file="$run_dir/result.json"
   mapping_file="$run_dir/组件映射.md"
@@ -721,6 +749,7 @@ check_run() {
   journeys_file="$run_dir/behavior-journeys.json"
   facts_file="$run_dir/source-facts.json"
   truth_file="$run_dir/truth-map.json"
+  snapshots_file="$run_dir/state-snapshots.json"
   context_file="$run_dir/context-index.json"
   cycle_file="$run_dir/work-cycle.json"
   [[ -d "$run_dir" ]] || fail "run not found: .runs/$project/$run_id"
@@ -750,6 +779,7 @@ check_run() {
     [[ -f "$journeys_file" ]] || fail "behavior-journeys.json is missing; regenerate the full-app run"
     [[ -f "$facts_file" ]] || fail "source-facts.json is missing; create a SIMPLIFY v2 run"
     [[ -f "$truth_file" ]] || fail "truth-map.json is missing; create a SIMPLIFY v2 run"
+    [[ -f "$snapshots_file" ]] || fail "state-snapshots.json is missing; create a fresh source-grounded Run"
     [[ -f "$context_file" ]] || fail "context-index.json is missing; run ./harness context before implementation"
     [[ -f "$cycle_file" ]] || fail "work-cycle.json is missing; create a fresh grounded-first-pass Run"
     source_dir="$(find_source_dir "$project")" || fail "source project not found under xcode/: $project"
@@ -758,10 +788,10 @@ check_run() {
     node "$ROOT/scripts/check_app_coverage.mjs" \
       "--coverage=$coverage_file" "--source=$source_dir" "--web=$web_dir"
     node "$ROOT/scripts/check_source_facts.mjs" \
-      "--coverage=$coverage_file" "--facts=$facts_file" "--matrix=$matrix_file"
+      "--coverage=$coverage_file" "--facts=$facts_file" "--matrix=$matrix_file" "--snapshots=$snapshots_file"
     node "$ROOT/scripts/build_context.mjs" \
       "--coverage=$coverage_file" "--facts=$facts_file" "--matrix=$matrix_file" \
-      "--truth-map=$truth_file" "--run-dir=$run_dir" "--check=true"
+      "--truth-map=$truth_file" "--state-snapshots=$snapshots_file" "--run-dir=$run_dir" "--check=true"
     node "$ROOT/scripts/work_cycle.mjs" \
       "--cycle=$cycle_file" "--web=$web_dir" "--context-index=$context_file" "--action=check"
     node "$ROOT/scripts/check_reconciliation.mjs" \
@@ -787,9 +817,11 @@ NODE
     node "$ROOT/scripts/check_web_integrity.mjs" \
       "--web=$web_dir" "--run-dir=$run_dir" "--source=$source_dir" "--truth-map=$truth_file"
     node "$ROOT/scripts/check_behavior_journeys.mjs" \
-      "--coverage=$coverage_file" "--journeys=$journeys_file" "--web=$web_dir"
+      "--coverage=$coverage_file" "--journeys=$journeys_file" "--facts=$facts_file" \
+      "--snapshots=$snapshots_file" "--matrix=$matrix_file" "--web=$web_dir"
     node "$ROOT/scripts/check_visual_matrix.mjs" \
       "--coverage=$coverage_file" "--matrix=$matrix_file" "--run-dir=$run_dir" "--web=$web_dir" \
+      "--snapshots=$snapshots_file" \
       "--evidence-after=$evidence_after"
     visual_review_status="$(node -e 'const fs=require("node:fs"); const result=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(result.visual_review_status || "NOT_READY")' "$result_file")"
     if [[ "$visual_review_status" == "NEEDS_VISUAL_REVIEW" ]]; then
@@ -842,6 +874,7 @@ if (status === 'AUTO_COMPLETE' || status === 'NEEDS_REVISION') {
       changed_ratio: state.metrics.changed_ratio,
       ssim_score: state.metrics.ssim_score,
       mean_channel_error: state.metrics.mean_channel_error,
+      max_region_changed_ratio: state.metrics.max_region_changed_ratio,
       status: 'MEASURED',
       review_status: state.review_status,
     })));

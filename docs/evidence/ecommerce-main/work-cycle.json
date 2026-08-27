@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "project": "ecommerce-main",
+  "method": "GROUNDED_FIRST_PASS_THEN_BOUNDED_REPAIR",
+  "phase": "VERIFY",
+  "maximum_repair_rounds": 4,
+  "first_pass": {
+    "status": "COMPLETE",
+    "stage": "FIRST_PASS",
+    "implementation_sha256": "ee1777c81dce1d6aa26443cd4662c92e30f359e500e374a0f86532f8436fbae3",
+    "files": 56,
+    "facts_lock_sha256": "fdae4948b35768cbb2877f66aad11492651e4de98da2ccbca7fd0e056cbf9b01",
+    "context_key": "fdae4948b35768cbb2877f66aad11492651e4de98da2ccbca7fd0e056cbf9b01:e4e274901b194e4fc22a1225d57b034f3d65657dd07d6e7997186c4420c92b76:de83bd0b9ed38f63139a7bf56d70cbdf1fbb577fc9eac52198b1a57f34435795:ed4250589be312576cc5c8ebee20d3de2341157ec42044910251c320afaa4a73",
+    "recorded_at": "2026-08-27T04:03:09.173Z"
+  },
+  "repairs": [
+    {
+      "round": 1,
+      "evidence": [
+        "result-pre-repair.json"
+      ],
+      "stage": "REPAIR",
+      "implementation_sha256": "6edf3bc93eb87a8304f7232454281ca60d6540c4675d53965d7f0e1b4cd32fd0",
+      "files": 56,
+      "facts_lock_sha256": "fdae4948b35768cbb2877f66aad11492651e4de98da2ccbca7fd0e056cbf9b01",
+      "context_key": "fdae4948b35768cbb2877f66aad11492651e4de98da2ccbca7fd0e056cbf9b01:e4e274901b194e4fc22a1225d57b034f3d65657dd07d6e7997186c4420c92b76:de83bd0b9ed38f63139a7bf56d70cbdf1fbb577fc9eac52198b1a57f34435795:ed4250589be312576cc5c8ebee20d3de2341157ec42044910251c320afaa4a73",
+      "recorded_at": "2026-08-27T04:05:30.144Z"
+    },
+    {
+      "round": 2,
+      "evidence": [
+        "result.json"
+      ],
+      "stage": "REPAIR",
+      "implementation_sha256": "d17f819da9076e4a3c06eec96d1d0101a823c6ae59bc1dff79ed38d2f0598140",
+      "files": 56,
+      "facts_lock_sha256": "61dafb2603419a7838f4c8811c89db9e516ddcc087d2b606d5aec171d31bbdc6",
+      "context_key": "61dafb2603419a7838f4c8811c89db9e516ddcc087d2b606d5aec171d31bbdc6:cac8f8122fd2a9f25fac26137ce238f7ce6420da3d613fc3976bda87ea77f910:9ff57d246d3178bed104aeb01979a6696bc01c8f0dea08fbf50333302a7188cb:ed4250589be312576cc5c8ebee20d3de2341157ec42044910251c320afaa4a73",
+      "recorded_at": "2026-08-27T05:30:57.775Z"
+    },
+    {
+      "round": 3,
+      "evidence": [
+        "result.json"
+      ],
+      "stage": "REPAIR",
+      "implementation_sha256": "6be6bf9f89767f2e8fbe54509c2df4b74e7cd88a19012a888b831e77d0d396d0",
+      "files": 56,
+      "facts_lock_sha256": "61dafb2603419a7838f4c8811c89db9e516ddcc087d2b606d5aec171d31bbdc6",
+      "context_key": "61dafb2603419a7838f4c8811c89db9e516ddcc087d2b606d5aec171d31bbdc6:cac8f8122fd2a9f25fac26137ce238f7ce6420da3d613fc3976bda87ea77f910:9ff57d246d3178bed104aeb01979a6696bc01c8f0dea08fbf50333302a7188cb:ed4250589be312576cc5c8ebee20d3de2341157ec42044910251c320afaa4a73",
+      "recorded_at": "2026-08-27T07:34:55.187Z"
+    },
+    {
+      "round": 4,
+      "evidence": [
+        "result.json"
+      ],
+      "stage": "REPAIR",
+      "implementation_sha256": "e0b1825100e4fb63f9e546ded48d8473dfe015569e737e2d3d931e71912fb45e",
+      "files": 56,
+      "facts_lock_sha256": "61dafb2603419a7838f4c8811c89db9e516ddcc087d2b606d5aec171d31bbdc6",
+      "context_key": "61dafb2603419a7838f4c8811c89db9e516ddcc087d2b606d5aec171d31bbdc6:cac8f8122fd2a9f25fac26137ce238f7ce6420da3d613fc3976bda87ea77f910:9ff57d246d3178bed104aeb01979a6696bc01c8f0dea08fbf50333302a7188cb:ed4250589be312576cc5c8ebee20d3de2341157ec42044910251c320afaa4a73",
+      "recorded_at": "2026-08-27T07:42:20.386Z"
+    }
+  ],
+  "last_checkpoint": {
+    "stage": "REPAIR",
+    "implementation_sha256": "e0b1825100e4fb63f9e546ded48d8473dfe015569e737e2d3d931e71912fb45e",
+    "files": 56,
+    "facts_lock_sha256": "61dafb2603419a7838f4c8811c89db9e516ddcc087d2b606d5aec171d31bbdc6",
+    "context_key": "61dafb2603419a7838f4c8811c89db9e516ddcc087d2b606d5aec171d31bbdc6:cac8f8122fd2a9f25fac26137ce238f7ce6420da3d613fc3976bda87ea77f910:9ff57d246d3178bed104aeb01979a6696bc01c8f0dea08fbf50333302a7188cb:ed4250589be312576cc5c8ebee20d3de2341157ec42044910251c320afaa4a73",
+    "recorded_at": "2026-08-27T07:42:20.386Z"
+  }
+}

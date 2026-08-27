@@ -25,6 +25,7 @@ export function visualPlanPayload(matrix) {
       mode: matrix.quality_policy?.mode,
       refinement_round_limit: matrix.quality_policy?.refinement_round_limit,
       metrics_are_experimental: matrix.quality_policy?.metrics_are_experimental,
+      review_triage: matrix.quality_policy?.review_triage,
     },
     screens: (matrix.screens || []).map((screen) => ({
       source_id: screen.source_id,
@@ -39,6 +40,7 @@ export function visualPlanPayload(matrix) {
         web_test: state.web_test,
         web_screenshot: state.web_screenshot,
         report: state.report,
+        state_snapshot_id: state.state_snapshot_id || state.id,
         ios_crop: state.ios_crop || '',
         web_crop: state.web_crop || '',
         source_evidence: state.source_evidence || [],
@@ -48,6 +50,9 @@ export function visualPlanPayload(matrix) {
 }
 
 export const CONFIDENCE_LEVELS = new Set(['CONFIRMED', 'SUPPORTED', 'INFERRED', 'BLOCKED']);
+export const FACT_TYPES = new Set(['SCREEN', 'STATE', 'ACTION', 'FLOW', 'NAVIGATION', 'DATA', 'ASSET']);
+export const PRESENTATION_MODES = new Set(['ROOT', 'TAB_ROOT', 'NAV_PUSH', 'SHEET', 'FULL_SCREEN_COVER', 'OVERLAY', 'EXTERNAL']);
+export const NAVIGATION_EFFECTS = new Set(['STAY', 'PUSH', 'DISMISS', 'PRESENT', 'SWITCH_TAB', 'EXTERNAL', 'NONE']);
 export const CRITICAL_REASONS = new Set([
   'TOP_LEVEL_NAV',
   'CORE_FLOW',

@@ -18,7 +18,9 @@ const value = {
   version: 1,
   project: coverage.project,
   generated_at: new Date().toISOString(),
-  completion_rule: 'Define a small set of real action-to-outcome journeys after the first WebApp implementation. At least one journey must cross routes when the App has multiple screens.',
+  completion_rule: 'Define a small set of source-backed action-to-outcome journeys before implementation. Every interactive step must reference a locked ACTION fact and a confirmed state snapshot.',
+  facts_lock_sha256: '',
+  state_snapshots_sha256: '',
   policy: {
     minimum_core_journeys: Math.min(3, Math.max(1, screenCount)),
     repair_round_limit: 2,

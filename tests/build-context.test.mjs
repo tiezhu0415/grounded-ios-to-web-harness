@@ -7,6 +7,7 @@ import test from 'node:test';
 import { PNG } from 'pngjs';
 import { createBuildContexts, validateContextIndex } from '../scripts/build_context.mjs';
 import { createSourceFacts } from '../scripts/source_facts.mjs';
+import { createStateSnapshots } from '../scripts/state_snapshots.mjs';
 import { createVisualMatrix } from '../scripts/visual_matrix.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -32,10 +33,15 @@ function setup() {
   const facts = createSourceFacts(coverage);
   for (const value of Object.values(facts.discovery)) { value.status = 'COMPLETE'; value.evidence = ['evidence/ref']; }
   for (const value of Object.values(facts.assessments)) { value.status = 'CONFIRMED'; value.evidence = ['evidence/ref']; }
+  for (const fact of facts.facts.filter((item) => item.type === 'NAVIGATION')) {
+    fact.presentation = 'TAB_ROOT'; fact.tab_bar_visible = true; fact.owning_tab = 'main';
+    fact.entry_effect = 'Open from the main tab'; fact.exit_effect = 'Remain in the main tab';
+    fact.evidence = [{ kind: 'SOURCE', ref: fact.source }]; fact.confidence = 'SUPPORTED';
+  }
   const matrix = createVisualMatrix(coverage);
   for (const screen of matrix.screens) {
     screen.critical = true;
-    screen.selection_reason = 'CORE_FLOW';
+    screen.selection_reason = 'TOP_LEVEL_NAV';
     screen.states[0].required = true;
     const image = new PNG({ width: 4, height: 2 });
     for (let offset = 0; offset < image.data.length; offset += 4) {
@@ -48,16 +54,23 @@ function setup() {
     fs.mkdirSync(path.dirname(screenshot), { recursive: true });
     fs.writeFileSync(screenshot, PNG.sync.write(image));
   }
+  const stateSnapshots = createStateSnapshots(coverage, matrix);
+  for (const snapshot of stateSnapshots.snapshots) {
+    snapshot.status = 'CONFIRMED'; snapshot.confidence = 'SUPPORTED'; snapshot.identity = { variant: snapshot.state_id };
+    snapshot.source_evidence = [`RUNTIME:${snapshot.state_id}`]; snapshot.ios_setup.evidence = [`RUNTIME:${snapshot.state_id}`];
+    snapshot.web_setup.seed_evidence = [`SOURCE:${snapshot.state_id}`];
+  }
   const files = {
-    coverage: path.join(directory, 'coverage.json'), facts: path.join(directory, 'facts.json'), matrix: path.join(directory, 'matrix.json'),
+    coverage: path.join(directory, 'coverage.json'), facts: path.join(directory, 'facts.json'), matrix: path.join(directory, 'matrix.json'), snapshots: path.join(directory, 'snapshots.json'),
   };
   fs.writeFileSync(files.coverage, JSON.stringify(coverage));
   fs.writeFileSync(files.facts, JSON.stringify(facts));
   fs.writeFileSync(files.matrix, JSON.stringify(matrix));
+  fs.writeFileSync(files.snapshots, JSON.stringify(stateSnapshots));
   const locked = spawnSync('node', [path.join(root, 'scripts/lock_source_facts.mjs'),
-    `--coverage=${files.coverage}`, `--facts=${files.facts}`, `--matrix=${files.matrix}`], { encoding: 'utf8' });
+    `--coverage=${files.coverage}`, `--facts=${files.facts}`, `--matrix=${files.matrix}`, `--snapshots=${files.snapshots}`], { encoding: 'utf8' });
   assert.equal(locked.status, 0, locked.stderr);
-  return { directory, coverage, facts: JSON.parse(fs.readFileSync(files.facts)), matrix, truthMap: {
+  return { directory, coverage, facts: JSON.parse(fs.readFileSync(files.facts)), matrix, stateSnapshots, truthMap: {
     status: 'CONFIRMED', data_status: 'NOT_APPLICABLE', asset_status: 'CONFIRMED', data_sources: [], external_resources: [], blocked: [],
     assets: [{ source: 'Views/HomeView.swift', evidence: 'graph:Home', web_path: 'public/home.png' }],
   } };
@@ -73,6 +86,7 @@ test('build context keeps one current fact slice per screen and adds pre-generat
   assert.ok(home.source_facts.every((fact) => fact.source === 'Views/HomeView.swift'));
   assert.ok(home.source_facts.every((fact) => !fact.id.includes('DetailView')));
   assert.equal(home.truth.assets.length, 1);
+  assert.equal(home.state_snapshots.length, 1);
   const grounding = JSON.parse(fs.readFileSync(path.join(value.directory, home.visual_grounding[0])));
   assert.deepEqual(grounding.screenshot.width, 4);
   assert.deepEqual(grounding.screenshot.height, 2);

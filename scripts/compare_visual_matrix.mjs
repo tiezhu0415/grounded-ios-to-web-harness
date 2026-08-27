@@ -44,8 +44,9 @@ const failures = [];
 const triage = matrix.quality_policy?.review_triage || {};
 const changedRatioTrigger = Number(triage.changed_ratio_at_or_above);
 const ssimTrigger = Number(triage.ssim_at_or_below);
+const regionTrigger = Number(triage.max_region_changed_ratio_at_or_above);
 
-if (triage.provisional !== true || !Number.isFinite(changedRatioTrigger) || !Number.isFinite(ssimTrigger)) {
+if (triage.provisional !== true || !Number.isFinite(changedRatioTrigger) || !Number.isFinite(ssimTrigger) || !Number.isFinite(regionTrigger)) {
   throw new Error('visual matrix is missing provisional review_triage values');
 }
 
@@ -85,8 +86,11 @@ for (const screen of matrix.screens || []) {
       changed_ratio: metrics.changed_ratio,
       ssim_score: metrics.ssim_score,
       mean_channel_error: metrics.mean_channel_error,
+      max_region_changed_ratio: metrics.highest_difference_regions?.[0]?.changed_ratio ?? 0,
     };
-    state.review_status = state.metrics.changed_ratio >= changedRatioTrigger || state.metrics.ssim_score <= ssimTrigger
+    state.review_status = state.metrics.changed_ratio >= changedRatioTrigger
+      || state.metrics.ssim_score <= ssimTrigger
+      || state.metrics.max_region_changed_ratio >= regionTrigger
       ? 'REVIEW_RECOMMENDED'
       : 'NO_AUTOMATIC_FLAG';
     comparisons.push({

@@ -2,6 +2,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { sha256Json } from './run_contract.mjs';
+import { stateSnapshotsPayload, validateStateSnapshots } from './state_snapshots.mjs';
 
 function parseOptions(argv) {
   return Object.fromEntries(argv.map((argument) => {
@@ -20,7 +22,15 @@ function safePath(root, relative, label) {
   return resolved;
 }
 
-export function validateBehaviorJourneys({ coverage, manifest, webDirectory }) {
+function actionEffects(fact) {
+  return {
+    data_effects: fact.data_effects || [],
+    navigation_effect: fact.navigation_effect,
+    visible_feedback: fact.visible_feedback || [],
+  };
+}
+
+export function validateBehaviorJourneys({ coverage, manifest, facts, stateSnapshots, matrix, webDirectory }) {
   const errors = [];
   const journeys = Array.isArray(manifest.journeys) ? manifest.journeys : [];
   const screenCount = Array.isArray(coverage.screens) ? coverage.screens.length : 0;
@@ -29,6 +39,13 @@ export function validateBehaviorJourneys({ coverage, manifest, webDirectory }) {
   const ids = new Set();
   const testReferences = new Set();
   let crossRouteJourneys = 0;
+  const allFacts = [...(facts?.facts || []), ...(facts?.additional_facts || [])];
+  const factsById = new Map(allFacts.map((fact) => [fact.id, fact]));
+  const snapshotsById = new Map((stateSnapshots?.snapshots || []).map((snapshot) => [snapshot.id, snapshot]));
+
+  if (manifest.facts_lock_sha256 !== facts?.lock?.content_sha256) errors.push('behavior journeys use stale source facts');
+  if (manifest.state_snapshots_sha256 !== facts?.lock?.state_snapshots_sha256) errors.push('behavior journeys use stale state snapshots');
+  if (stateSnapshots && matrix) errors.push(...validateStateSnapshots({ coverage, matrix, snapshots: stateSnapshots, requireConfirmed: true }));
 
   if (!Number.isInteger(declaredMinimum) || declaredMinimum < minimum) {
     errors.push(`policy.minimum_core_journeys must be at least ${minimum}`);
@@ -56,6 +73,28 @@ export function validateBehaviorJourneys({ coverage, manifest, webDirectory }) {
     const interactiveActions = new Set(['click', 'fill', 'select', 'submit', 'toggle', 'drag', 'press']);
     if (!steps.some((step) => interactiveActions.has(step.action))) {
       errors.push(`${label} has no real user interaction`);
+    }
+    for (const step of steps.filter((item) => interactiveActions.has(item.action))) {
+      if (!step.source_fact_id) {
+        errors.push(`${label} interactive step has no source_fact_id`);
+        continue;
+      }
+      const sourceFact = factsById.get(step.source_fact_id);
+      if (!sourceFact || sourceFact.type !== 'ACTION') {
+        errors.push(`${label} interactive step references a missing/non-ACTION fact: ${step.source_fact_id}`);
+        continue;
+      }
+      if (sha256Json(step.expected_effects) !== sha256Json(actionEffects(sourceFact))) {
+        errors.push(`${label} expected effects differ from locked ACTION fact: ${step.source_fact_id}`);
+      }
+    }
+    if (!Array.isArray(journey.state_snapshot_ids) || journey.state_snapshot_ids.length === 0) {
+      errors.push(`${label} has no state snapshot`);
+    } else {
+      for (const snapshotId of journey.state_snapshot_ids) {
+        const snapshot = snapshotsById.get(snapshotId);
+        if (!snapshot || snapshot.status !== 'CONFIRMED') errors.push(`${label} references an unconfirmed state snapshot: ${snapshotId}`);
+      }
     }
     if (!Array.isArray(journey.expected_outcomes) || journey.expected_outcomes.length === 0) {
       errors.push(`${label} has no expected outcome`);
@@ -99,12 +138,15 @@ export function validateBehaviorJourneys({ coverage, manifest, webDirectory }) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const options = parseOptions(process.argv.slice(2));
-  for (const required of ['coverage', 'journeys', 'web']) {
+  for (const required of ['coverage', 'journeys', 'facts', 'snapshots', 'matrix', 'web']) {
     if (!options[required]) throw new Error(`missing --${required}`);
   }
   const result = validateBehaviorJourneys({
     coverage: JSON.parse(fs.readFileSync(path.resolve(options.coverage), 'utf8')),
     manifest: JSON.parse(fs.readFileSync(path.resolve(options.journeys), 'utf8')),
+    facts: JSON.parse(fs.readFileSync(path.resolve(options.facts), 'utf8')),
+    stateSnapshots: JSON.parse(fs.readFileSync(path.resolve(options.snapshots), 'utf8')),
+    matrix: JSON.parse(fs.readFileSync(path.resolve(options.matrix), 'utf8')),
     webDirectory: path.resolve(options.web),
   });
   if (result.errors.length > 0) {

@@ -1,5 +1,8 @@
 .DS_Store
 .mcp.json
+.env
+.env.*
+!.env.example
 .claude/settings.local.json
 .claude/worktrees/
 node_modules/
@@ -13,5 +16,8 @@ webapps/*/node_modules/
 webapps/*/dist/
 webapps/*/playwright-report/
 webapps/*/test-results/
+webapps/*/*.tsbuildinfo
+webapps/*/vite.config.js
+webapps/*/vite.config.d.ts
 harness.yaml
 *.log

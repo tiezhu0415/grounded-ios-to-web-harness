@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CRITICAL_REASONS } from './run_contract.mjs';
+import { validateStateSnapshots } from './state_snapshots.mjs';
 
 function parseOptions(argv) {
   return Object.fromEntries(
@@ -38,8 +39,9 @@ function requireFile(root, relative, label, errors) {
   }
 }
 
-export function validateVisualMatrix({ coverage, matrix, runDirectory, webDirectory, evidenceAfter = null }) {
+export function validateVisualMatrix({ coverage, matrix, stateSnapshots, runDirectory, webDirectory, evidenceAfter = null }) {
   const errors = [];
+  errors.push(...validateStateSnapshots({ coverage, matrix, snapshots: stateSnapshots, requireConfirmed: true }));
   const coverageScreens = Array.isArray(coverage.screens) ? coverage.screens : [];
   const matrixScreens = Array.isArray(matrix.screens) ? matrix.screens : [];
   const bySource = new Map(matrixScreens.map((screen) => [screen.source_id, screen]));
@@ -54,7 +56,7 @@ export function validateVisualMatrix({ coverage, matrix, runDirectory, webDirect
   if (matrix.quality_policy?.mode !== 'METRICS_EXPERIMENTAL' || matrix.quality_policy?.metrics_are_experimental !== true) {
     errors.push('quality_policy must keep VRT metrics experimental in v0.x');
   }
-  if (triage.provisional !== true || !Number.isFinite(Number(triage.changed_ratio_at_or_above)) || !Number.isFinite(Number(triage.ssim_at_or_below))) {
+  if (triage.provisional !== true || !Number.isFinite(Number(triage.changed_ratio_at_or_above)) || !Number.isFinite(Number(triage.ssim_at_or_below)) || !Number.isFinite(Number(triage.max_region_changed_ratio_at_or_above))) {
     errors.push('quality_policy.review_triage must define provisional visual review signals');
   }
   const expectedMinimum = Math.min(3, coverageScreens.length);
@@ -102,6 +104,7 @@ export function validateVisualMatrix({ coverage, matrix, runDirectory, webDirect
       if (!Number.isFinite(state.metrics?.changed_ratio) || !Number.isFinite(state.metrics?.ssim_score)) {
         errors.push(`${label} has no recorded Pixelmatch/SSIM metrics`);
       }
+      if (!Number.isFinite(state.metrics?.max_region_changed_ratio)) errors.push(`${label} has no regional difference metric`);
       for (const field of ['ios_flow', 'ios_screenshot', 'web_screenshot', 'report']) {
         const value = state[field];
         if (seenFiles.has(value)) errors.push(`${label} reuses evidence path: ${value}`);
@@ -130,6 +133,13 @@ export function validateVisualMatrix({ coverage, matrix, runDirectory, webDirect
           errors.push(`${label} Web test does not contain its unique test id: ${testId}`);
         }
       }
+      const snapshot = (stateSnapshots?.snapshots || []).find((item) => item.id === (state.state_snapshot_id || state.id));
+      if (snapshot && snapshot.web_setup?.test !== state.web_test) {
+        errors.push(`${label} Web visual test differs from its confirmed state snapshot setup`);
+      }
+      if (snapshot && snapshot.ios_setup?.flow !== state.ios_flow) {
+        errors.push(`${label} iOS visual flow differs from its confirmed state snapshot setup`);
+      }
 
       if (reportFile) {
         try {
@@ -137,11 +147,16 @@ export function validateVisualMatrix({ coverage, matrix, runDirectory, webDirect
           if (report.engine?.primary !== 'pixelmatch') errors.push(`${label} report did not use Pixelmatch`);
           if (!Number.isFinite(report.ssim_score)) errors.push(`${label} report has no SSIM score`);
           if (!Number.isFinite(report.changed_ratio)) errors.push(`${label} report has no changed ratio`);
+          const reportRegion = report.highest_difference_regions?.[0]?.changed_ratio;
+          if (!Number.isFinite(reportRegion)) errors.push(`${label} report has no regional difference evidence`);
           if (Number.isFinite(state.metrics?.changed_ratio) && state.metrics.changed_ratio !== report.changed_ratio) {
             errors.push(`${label} recorded changed_ratio does not match its report`);
           }
           if (Number.isFinite(state.metrics?.ssim_score) && state.metrics.ssim_score !== report.ssim_score) {
             errors.push(`${label} recorded SSIM does not match its report`);
+          }
+          if (Number.isFinite(state.metrics?.max_region_changed_ratio) && state.metrics.max_region_changed_ratio !== reportRegion) {
+            errors.push(`${label} recorded regional difference does not match its report`);
           }
         } catch (error) {
           errors.push(`${label} visual report is invalid JSON: ${error.message}`);
@@ -158,7 +173,7 @@ export function validateVisualMatrix({ coverage, matrix, runDirectory, webDirect
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const options = parseOptions(process.argv.slice(2));
-  for (const required of ['coverage', 'matrix', 'run-dir', 'web']) {
+  for (const required of ['coverage', 'matrix', 'snapshots', 'run-dir', 'web']) {
     if (!options[required]) throw new Error(`missing --${required}`);
   }
   const coverage = JSON.parse(fs.readFileSync(path.resolve(options.coverage), 'utf8'));
@@ -166,6 +181,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const result = validateVisualMatrix({
     coverage,
     matrix,
+    stateSnapshots: JSON.parse(fs.readFileSync(path.resolve(options.snapshots), 'utf8')),
     runDirectory: path.resolve(options['run-dir']),
     webDirectory: path.resolve(options.web),
     evidenceAfter: options['evidence-after'] ? Number(options['evidence-after']) : null,

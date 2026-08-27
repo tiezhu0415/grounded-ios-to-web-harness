@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { PNG } from 'pngjs';
 import { createVisualMatrix } from '../scripts/visual_matrix.mjs';
+import { createStateSnapshots } from '../scripts/state_snapshots.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 
@@ -44,12 +45,14 @@ function materialize(directory, matrix, changedReport = false) {
         engine: { primary: 'pixelmatch' },
         changed_ratio: changedReport ? 0.4 : 0.05,
         ssim_score: changedReport ? 0.5 : 0.95,
+        highest_difference_regions: [{ changed_ratio: changedReport ? 0.7 : 0.1 }],
       }));
       state.status = 'MEASURED';
       state.review_status = changedReport ? 'REVIEW_RECOMMENDED' : 'NO_AUTOMATIC_FLAG';
       state.metrics = {
         changed_ratio: changedReport ? 0.4 : 0.05,
         ssim_score: changedReport ? 0.5 : 0.95,
+        max_region_changed_ratio: changedReport ? 0.7 : 0.1,
       };
       const [testFile, testId] = state.web_test.split('#');
       fs.mkdirSync(path.dirname(path.join(web, testFile)), { recursive: true });
@@ -60,10 +63,21 @@ function materialize(directory, matrix, changedReport = false) {
 }
 
 function runCheck(directory, web, coverageFile, matrixFile) {
+  const sourceCoverage = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
+  const matrix = JSON.parse(fs.readFileSync(matrixFile, 'utf8'));
+  const snapshots = createStateSnapshots(sourceCoverage, matrix);
+  for (const snapshot of snapshots.snapshots) {
+    snapshot.status = 'CONFIRMED'; snapshot.confidence = 'SUPPORTED'; snapshot.identity = { variant: snapshot.id };
+    snapshot.source_evidence = [`SOURCE:${snapshot.id}`]; snapshot.ios_setup.evidence = [`RUNTIME:${snapshot.id}`];
+    snapshot.web_setup.seed_evidence = [`SOURCE:${snapshot.id}`];
+  }
+  const snapshotsFile = path.join(directory, 'state-snapshots.json');
+  fs.writeFileSync(snapshotsFile, JSON.stringify(snapshots));
   return spawnSync('node', [
     path.join(root, 'scripts/check_visual_matrix.mjs'),
     `--coverage=${coverageFile}`,
     `--matrix=${matrixFile}`,
+    `--snapshots=${snapshotsFile}`,
     `--run-dir=${directory}`,
     `--web=${web}`,
   ], { encoding: 'utf8' });

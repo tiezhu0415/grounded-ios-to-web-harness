@@ -22,6 +22,20 @@ export function createSourceFacts(coverage) {
       evidence: [{ kind: 'STATIC_SCAN', ref: screen.discovery?.source?.evidence || screen.id }],
       confidence: 'SUPPORTED',
     });
+    facts.push({
+      id: `navigation:${screen.id}`,
+      type: 'NAVIGATION',
+      fact: `Navigation and presentation contract for ${screen.declaration}`,
+      screen_id: screen.id,
+      presentation: 'UNCONFIRMED',
+      tab_bar_visible: null,
+      owning_tab: null,
+      entry_effect: screen.discovery?.graph?.navigation_entry || '',
+      exit_effect: '',
+      source: screen.source,
+      evidence: (screen.discovery?.graph?.evidence || []).map((ref) => ({ kind: 'GRAPH', ref })),
+      confidence: 'INFERRED',
+    });
     for (const state of screen.states || []) {
       facts.push({
         id: `state:${screen.id}:${state.id}`,
@@ -50,7 +64,7 @@ export function createSourceFacts(coverage) {
     },
     facts,
     additional_facts: [],
-    lock: { status: 'UNLOCKED', content_sha256: '', visual_plan_sha256: '', history: [] },
+    lock: { status: 'UNLOCKED', content_sha256: '', visual_plan_sha256: '', state_snapshots_sha256: '', history: [] },
   };
 }
 

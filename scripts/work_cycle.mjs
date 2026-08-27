@@ -53,10 +53,10 @@ export function createWorkCycle(project, maximumRepairRounds = 2) {
 }
 
 export function contextKey(index) {
-  return [index?.facts_lock_sha256, index?.visual_plan_sha256, index?.truth_sources_sha256].join(':');
+  return [index?.facts_lock_sha256, index?.visual_plan_sha256, index?.truth_sources_sha256, index?.state_snapshots_sha256].join(':');
 }
 
-export function checkpointWorkCycle({ cycle, stage, webDirectory, contextIndex }) {
+export function checkpointWorkCycle({ cycle, stage, webDirectory, contextIndex, evidenceRefs = [] }) {
   if (!['first-pass', 'repair'].includes(stage)) throw new Error('stage must be first-pass or repair');
   if (contextIndex?.status !== 'READY') throw new Error('build context is not READY');
   const snapshot = implementationSnapshot(webDirectory);
@@ -77,8 +77,15 @@ export function checkpointWorkCycle({ cycle, stage, webDirectory, contextIndex }
     if ((cycle.repairs || []).length >= Number(cycle.maximum_repair_rounds)) {
       throw new Error(`repair round limit reached (${cycle.maximum_repair_rounds}); stop and report remaining differences`);
     }
+    if (!Array.isArray(evidenceRefs) || evidenceRefs.length === 0) {
+      throw new Error('repair checkpoint requires at least one failed evidence reference');
+    }
+    const previousHash = cycle.last_checkpoint?.implementation_sha256;
+    if (previousHash === checkpoint.implementation_sha256) {
+      throw new Error('repair checkpoint did not change the WebApp implementation');
+    }
     cycle.repairs ||= [];
-    cycle.repairs.push({ round: cycle.repairs.length + 1, ...checkpoint });
+    cycle.repairs.push({ round: cycle.repairs.length + 1, evidence: evidenceRefs, ...checkpoint });
     cycle.phase = 'VERIFY';
   }
   cycle.last_checkpoint = checkpoint;
@@ -90,6 +97,12 @@ export function validateWorkCycle({ cycle, webDirectory, contextIndex }) {
   if (cycle?.method !== 'GROUNDED_FIRST_PASS_THEN_BOUNDED_REPAIR') errors.push('work cycle method is missing or unsupported');
   if (cycle?.first_pass?.status !== 'COMPLETE') errors.push('first-pass checkpoint is missing');
   if ((cycle?.repairs || []).length > Number(cycle?.maximum_repair_rounds)) errors.push('repair round limit was exceeded');
+  let previousHash = cycle?.first_pass?.implementation_sha256;
+  for (const repair of cycle?.repairs || []) {
+    if (!Array.isArray(repair.evidence) || repair.evidence.length === 0) errors.push(`repair round ${repair.round} has no failed evidence reference`);
+    if (repair.implementation_sha256 === previousHash) errors.push(`repair round ${repair.round} did not change the WebApp implementation`);
+    previousHash = repair.implementation_sha256;
+  }
   if (cycle?.last_checkpoint?.facts_lock_sha256 !== contextIndex?.facts_lock_sha256) errors.push('implementation checkpoint uses stale source facts');
   if (cycle?.last_checkpoint?.context_key !== contextKey(contextIndex)) errors.push('implementation checkpoint uses stale build context');
   if (!cycle?.last_checkpoint?.implementation_sha256) {
@@ -113,7 +126,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (errors.length) throw new Error(`WORK CYCLE INVALID\n${errors.map((error) => `- ${error}`).join('\n')}`);
     process.stdout.write(`WORK CYCLE VALID\nREPAIRS=${cycle.repairs.length}/${cycle.maximum_repair_rounds}\n`);
   } else if (options.action === 'checkpoint') {
-    checkpointWorkCycle({ cycle, stage: options.stage, webDirectory, contextIndex });
+    const evidenceRefs = options.evidence ? options.evidence.split(',').filter(Boolean) : [];
+    checkpointWorkCycle({ cycle, stage: options.stage, webDirectory, contextIndex, evidenceRefs });
     atomicJson(cycleFile, cycle);
     process.stdout.write(`WORK CHECKPOINT RECORDED\nSTAGE=${options.stage}\nREPAIRS=${cycle.repairs.length}/${cycle.maximum_repair_rounds}\n`);
   } else {

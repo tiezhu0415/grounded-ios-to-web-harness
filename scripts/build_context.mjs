@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { validateSourceFacts } from './check_source_facts.mjs';
 import { sha256Json } from './run_contract.mjs';
+import { stateSnapshotsPayload, validateStateSnapshots } from './state_snapshots.mjs';
 import { createVisualGrounding } from './visual_grounding.mjs';
 
 function parseOptions(argv) {
@@ -74,6 +75,7 @@ function relevantFacts(facts, screen) {
     fact.id === `screen:${screen.id}`
     || fact.id?.startsWith(`state:${screen.id}:`)
     || fact.source === screen.source
+    || fact.screen_id === screen.id
     || fact.screen_ids?.includes(screen.id)
     || graphRefs.some((ref) => `${fact.source} ${fact.fact} ${(fact.evidence || []).map((item) => item.ref).join(' ')}`.includes(ref))
   ));
@@ -93,12 +95,14 @@ function relevantTruth(truthMap, screen, facts) {
   };
 }
 
-export function validateContextIndex({ coverage, facts, matrix, truthMap, runDirectory, index }) {
+export function validateContextIndex({ coverage, facts, matrix, truthMap, stateSnapshots, runDirectory, index }) {
   const errors = validateSourceTruth(truthMap);
+  errors.push(...validateStateSnapshots({ coverage, matrix, snapshots: stateSnapshots, requireConfirmed: true }));
   if (index?.status !== 'READY') errors.push('context index is not READY');
   if (index?.facts_version !== facts.version || index?.facts_lock_sha256 !== facts.lock?.content_sha256) errors.push('context index uses stale source facts');
   if (index?.visual_plan_sha256 !== facts.lock?.visual_plan_sha256) errors.push('context index uses a stale Critical Visual Set');
   if (index?.truth_sources_sha256 !== sha256Json(truthSourcesPayload(truthMap))) errors.push('context index uses stale Data/Asset source truth');
+  if (index?.state_snapshots_sha256 !== sha256Json(stateSnapshotsPayload(stateSnapshots))) errors.push('context index uses stale state snapshots');
   const entries = new Map((index?.contexts || []).map((item) => [item.source_id, item]));
   for (const screen of coverage.screens || []) {
     const entry = entries.get(screen.id);
@@ -138,11 +142,13 @@ export function validateContextIndex({ coverage, facts, matrix, truthMap, runDir
   return errors;
 }
 
-export function createBuildContexts({ coverage, facts, matrix, truthMap, runDirectory, ocrLanguage = 'eng', noOcr = false }) {
-  const factErrors = validateSourceFacts({ coverage, facts, matrix, requireLocked: true, allowUnresolved: false });
+export function createBuildContexts({ coverage, facts, matrix, truthMap, stateSnapshots, runDirectory, ocrLanguage = 'eng', noOcr = false }) {
+  const factErrors = validateSourceFacts({ coverage, facts, matrix, snapshots: stateSnapshots, requireLocked: true, allowUnresolved: false });
   if (factErrors.length) throw new Error(`cannot build contexts from invalid facts:\n${factErrors.map((error) => `- ${error}`).join('\n')}`);
   const truthErrors = validateSourceTruth(truthMap);
   if (truthErrors.length) throw new Error(`cannot build contexts from incomplete source truth:\n${truthErrors.map((error) => `- ${error}`).join('\n')}`);
+  const snapshotErrors = validateStateSnapshots({ coverage, matrix, snapshots: stateSnapshots, requireConfirmed: true });
+  if (snapshotErrors.length) throw new Error(`cannot build contexts from invalid state snapshots:\n${snapshotErrors.map((error) => `- ${error}`).join('\n')}`);
   const grounding = createVisualGrounding({ matrix, facts, truthMap, runDirectory, ocrLanguage, noOcr });
   const groundingBySource = new Map();
   for (const item of grounding) {
@@ -167,6 +173,7 @@ export function createBuildContexts({ coverage, facts, matrix, truthMap, runDire
       source_facts: factsForScreen,
       discovery: screen.discovery,
       states: screen.states || [],
+      state_snapshots: (stateSnapshots.snapshots || []).filter((snapshot) => snapshot.screen_id === screen.id),
       truth: relevantTruth(truthMap, screen, factsForScreen),
       visual_grounding: groundingBySource.get(screen.id) || [],
       implementation_freedom: 'Choose React structure, libraries, and component boundaries freely. Do not invent source facts or copy screenshots into the Web UI.',
@@ -185,6 +192,7 @@ export function createBuildContexts({ coverage, facts, matrix, truthMap, runDire
     facts_lock_sha256: facts.lock.content_sha256,
     visual_plan_sha256: facts.lock.visual_plan_sha256,
     truth_sources_sha256: sha256Json(truthSourcesPayload(truthMap)),
+    state_snapshots_sha256: sha256Json(stateSnapshotsPayload(stateSnapshots)),
     contexts,
     visual_grounding: grounding,
     generated_at: new Date().toISOString(),
@@ -195,9 +203,9 @@ export function createBuildContexts({ coverage, facts, matrix, truthMap, runDire
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const options = parseOptions(process.argv.slice(2));
-  for (const required of ['coverage', 'facts', 'matrix', 'truth-map', 'run-dir']) if (!options[required]) throw new Error(`missing --${required}`);
+  for (const required of ['coverage', 'facts', 'matrix', 'truth-map', 'state-snapshots', 'run-dir']) if (!options[required]) throw new Error(`missing --${required}`);
   const inputs = {
-    coverage: load(options.coverage), facts: load(options.facts), matrix: load(options.matrix), truthMap: load(options['truth-map']),
+    coverage: load(options.coverage), facts: load(options.facts), matrix: load(options.matrix), truthMap: load(options['truth-map']), stateSnapshots: load(options['state-snapshots']),
     runDirectory: path.resolve(options['run-dir']), ocrLanguage: options['ocr-language'] || 'eng', noOcr: options['no-ocr'] === 'true',
   };
   if (options.check === 'true') {
